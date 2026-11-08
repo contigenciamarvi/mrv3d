@@ -103,7 +103,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       setRecolhido(localStorage.getItem("menu-recolhido") === "1");
-      const d = localStorage.getItem("tema") === "escuro";
+      // sem escolha salva, segue o tema do computador/celular
+      const t = localStorage.getItem("tema");
+      const d = t === "escuro" || (t !== "claro" && window.matchMedia("(prefers-color-scheme: dark)").matches);
       setEscuro(d); document.documentElement.classList.toggle("dark", d);
       setLidas(JSON.parse(localStorage.getItem("notif-lidas") || "[]"));
     } catch {}
@@ -287,7 +289,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                 )}
               </div>
-              <button onClick={alternarTema} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Alternar tema claro/escuro">{escuro ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</button>
+              <button onClick={alternarTema} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Alternar tema claro/escuro" title={escuro ? "Mudar para modo claro" : "Mudar para modo escuro"}>{escuro ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</button>
               <div className="ml-1 hidden text-right lg:block">
                 <div className="max-w-48 truncate text-sm font-medium leading-tight">{ctx.email}</div>
                 <div className="text-xs text-slate-500">{PAPEIS_EMPRESA[ctx.papel] || ctx.papel}</div>

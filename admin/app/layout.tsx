@@ -12,6 +12,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
         <Script src="/config.js" strategy="beforeInteractive" />
+        <Script src="/tema.js" strategy="beforeInteractive" />
       </head>
       <body>{children}</body>
     </html>

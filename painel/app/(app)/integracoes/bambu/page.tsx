@@ -123,7 +123,8 @@ function Config() {
           <p className="text-sm text-slate-600 dark:text-slate-300">Programa leve em Python para Windows, Linux ou Raspberry Pi. Só leitura: não pausa, não cancela, não envia impressões. Não abre portas no roteador.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <a href="/agente/mrv3d_agente.py" download><Button><Download className="h-4 w-4" /> mrv3d_agente.py</Button></a>
-            <a href="/agente/LEIAME.txt" target="_blank" rel="noreferrer"><Button variant="secondary">Instruções</Button></a>
+            <a href="/agente/guia-conectar-impressora.pdf" target="_blank" rel="noreferrer"><Button variant="secondary">Guia passo a passo (PDF)</Button></a>
+            <a href="/agente/LEIAME.txt" target="_blank" rel="noreferrer"><Button variant="ghost">LEIAME</Button></a>
             <a href="/agente/mrv3d_agente.py.sha256" target="_blank" rel="noreferrer"><Button variant="ghost">SHA-256</Button></a>
           </div>
           <p className="mt-2 text-xs text-slate-500">Para Bambu Lab: <code>pip install paho-mqtt</code>. Confira o download pela soma SHA-256.</p>

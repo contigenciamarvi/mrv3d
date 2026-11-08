@@ -82,7 +82,8 @@ function Conteudo() {
     <>
       <PageHeader titulo="Monitoramento de impressoras" sub="Estado em tempo real pelo agente local (somente leitura). Atualiza a cada 10 segundos."
         acoes={<><Button variant="secondary" onClick={() => { setAgora(Date.now()); recarregar(); }}><RefreshCw className="h-4 w-4" /> Atualizar</Button>
-          <Link href="/integracoes/bambu/?aba=config"><Button variant="secondary"><Plug className="h-4 w-4" /> Agentes</Button></Link></>} />
+          <Link href="/integracoes/bambu/?aba=config"><Button variant="secondary"><Plug className="h-4 w-4" /> Agentes</Button></Link>
+          <a href="/agente/guia-conectar-impressora.pdf" target="_blank" rel="noreferrer"><Button variant="ghost"><HelpCircle className="h-4 w-4" /> Como conectar</Button></a></>} />
       <Tabs abas={[["painel", "Impressoras"], ["trabalhos", `Trabalhos${semOrdem ? ` (${semOrdem} sem ordem)` : ""}`], ["eventos", "Histórico de eventos"]]} ativa={aba} onChange={setAba} />
       {falha && <ErrorBox erro={falha} onRetry={recarregar} />}
       {carregando && !dados ? <Loading /> : dados && <>
@@ -206,7 +207,8 @@ function ConectarImpressora({ imp, agentes, tel, onClose, onMudou }: { imp: Imp;
         <Field label="2. Agente local">{agentes.length ? <Select value={f.agente} onChange={(e) => setF({ ...f, agente: e.target.value })}>{agentes.map((a) => <option key={a.id} value={a.id}>{a.nome}{a.ultimo_contato ? ` · visto ${dataHora(a.ultimo_contato)}` : " · nunca conectou"}</option>)}</Select>
           : <Aviso tom="amarelo">Nenhum agente pareado. <Link className="underline" href="/integracoes/bambu/?aba=config">Parear um agente</Link>.</Aviso>}</Field>
         <div><div className="mb-1 font-medium text-slate-600 dark:text-slate-300">3. No computador do agente, adicione a impressora (as credenciais ficam só lá)</div>
-          <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-100">{cmd}</pre></div>
+          <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-100">{cmd}</pre>
+          <p className="mt-1 text-xs text-slate-500">No Windows, use <code>python</code> no lugar de <code>python3</code>. Passo a passo completo: <a className="text-brand-700 underline" href="/agente/guia-conectar-impressora.pdf" target="_blank" rel="noreferrer">guia em PDF</a>.</p></div>
         {detectados.length > 0 && <div><div className="mb-1 font-medium text-slate-600 dark:text-slate-300">Encontradas pelo agente e ainda não ligadas</div>
           <div className="flex flex-wrap gap-2">{detectados.map((d) => <Button key={d.dispositivo_id} size="sm" variant={f.id === d.dispositivo_id ? "primary" : "secondary"} onClick={() => setF({ ...f, id: d.dispositivo_id, agente: d.agente })}>{d.nome || d.dispositivo_id} · {d.dispositivo_id}</Button>)}</div></div>}
         <Field label={f.tipo === "bambu_lan" ? "4. Número de série da impressora" : "4. Identificador (o mesmo mostrado pelo agente)"}><Input value={f.id} onChange={(e) => setF({ ...f, id: e.target.value.replace(/[^A-Za-z0-9._-]/g, "") })} placeholder={f.tipo === "bambu_lan" ? "01P00A123456789" : "voron-24"} /></Field>

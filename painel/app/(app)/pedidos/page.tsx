@@ -184,7 +184,7 @@ function Detalhe({ id, clis, onClose, onMudou }: { id: string; clis: { id: strin
   const numero = `${app.config.prefixo_pedido}-${p.numero}`;
   const w = linkWhats(p.clientes?.whatsapp || p.clientes?.telefone, preencher(app.config.msg_pedido, { cliente: p.clientes?.nome.split(" ")[0] || "", numero, prazo: data(p.data_entrega) }));
   const somaItens = dados.itens.reduce((s, i) => s + i.quantidade * i.valor_unitario, 0);
-  const custo = p.custo_real > 0 ? p.custo_real : p.custo_estimado || 0;
+  const custo = p.status_producao === "concluida" && p.custo_real > 0 ? p.custo_real : p.custo_estimado || 0;
   const lucro = p.valor_total - custo - p.impostos_estimados;
 
   const salvar = async (e: React.FormEvent) => {
@@ -213,7 +213,7 @@ function Detalhe({ id, clis, onClose, onMudou }: { id: string; clis: { id: strin
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Valor do pedido" valor={brl(p.valor_total)} />
         <Kpi label="Recebido" valor={brl(p.valor_pago)} sub={p.valor_total > p.valor_pago ? `falta ${brl(p.valor_total - p.valor_pago)}` : undefined} />
-        {verCusto && <Kpi label={p.custo_real > 0 ? "Custo real" : "Custo estimado"} valor={brl(custo)} />}
+        {verCusto && <Kpi label={p.status_producao === "concluida" && p.custo_real > 0 ? "Custo real" : "Custo estimado"} valor={brl(custo)} sub={p.status_producao !== "concluida" && p.custo_real > 0 ? `${brl(p.custo_real)} já gastos na produção` : undefined} />}
         {verCusto && <Kpi label="Lucro do pedido" valor={brl(lucro)} tom={lucro >= 0 ? "verde" : "vermelho"} sub={p.impostos_estimados > 0 ? `já descontados ${brl(p.impostos_estimados)} de impostos/taxas` : undefined} />}
       </div>
       <Tabs abas={[["resumo", "Resumo"], ["itens", `Itens (${dados.itens.length})`], ["pagamentos", `Pagamentos (${dados.pags.filter((x) => !x.estornado).length})`], ["producao", `Produção (${dados.ops.length})`], ["entrega", "Entrega"], ...(app.pode("usuarios_admin") ? [["historico", "Histórico"] as ["historico", string]] : [])]} ativa={aba} onChange={setAba} />
@@ -260,7 +260,7 @@ function Detalhe({ id, clis, onClose, onMudou }: { id: string; clis: { id: strin
         {!dados.pags.length ? <Empty texto="Nenhum pagamento registrado" /> : <Table head={["Data", "Valor", "Forma", "Observação", ""]}>{dados.pags.map((g) => (
           <tr key={g.id} className={g.estornado ? "opacity-50" : ""}><Td>{data(g.data)}</Td><Td className={cn("tnum", g.estornado && "line-through")}>{brl(g.valor)}</Td><Td>{g.forma || "—"}</Td>
             <Td className="text-slate-500">{g.estornado ? `Estornado: ${g.motivo_estorno}` : g.observacao || "—"}</Td>
-            <Td>{podePagar && !g.estornado && <button onClick={() => setEstorno({ p: g, motivo: "" })} className="flex items-center gap-1 text-xs text-slate-500 hover:underline"><Undo2 className="h-3 w-3" /> Estornar</button>}</Td></tr>))}</Table>}
+            <Td>{(app.pode("financeiro_ver") || app.papel === "dono" || app.papel === "admin") && app.podeEscrever && !g.estornado && <button onClick={() => setEstorno({ p: g, motivo: "" })} className="flex items-center gap-1 text-xs text-slate-500 hover:underline"><Undo2 className="h-3 w-3" /> Estornar</button>}</Td></tr>))}</Table>}
         {podePagar && !cancelado && p.valor_pago < p.valor_total && <Button onClick={() => setPag({ valor: String(Math.round((p.valor_total - p.valor_pago) * 100) / 100).replace(".", ","), data: hojeISO(), forma: p.forma_pagamento || "Pix", conta: "", obs: "" })}><Plus className="h-4 w-4" /> Registrar pagamento</Button>}
         {p.valor_pago >= p.valor_total && p.valor_total > 0 && <Aviso tom="verde">Pedido quitado.</Aviso>}
       </div>}

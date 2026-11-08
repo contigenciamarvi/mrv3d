@@ -28,7 +28,7 @@ function Conteudo() {
     const [gastos, pedidos, movs, orcs] = await Promise.all([
       q<{ categoria: string; valor: number; data: string; descricao: string; materiais: { tipo_compra: string } | null }[]>(sb().from("gastos").select("categoria,valor,data,descricao,materiais(tipo_compra)").eq("empresa_id", app.empresa.id).gte("data", inicio).lte("data", fim)),
       app.pode("pedidos_ver") ? q<{ valor_total: number; valor_pago: number; custo_estimado: number | null; custo_real: number; status: string; created_at: string; clientes: { nome: string } | null }[]>(
-        sb().from("pedidos").select("valor_total,valor_pago,custo_estimado,custo_real,status,created_at,clientes(nome)").eq("empresa_id", app.empresa.id).neq("status", "cancelado").gte("created_at", inicio).lt("created_at", fimMais)) : Promise.resolve([]),
+        sb().from("pedidos").select("valor_total,valor_pago,custo_estimado,custo_real,status,status_producao,created_at,clientes(nome)").eq("empresa_id", app.empresa.id).neq("status", "cancelado").gte("created_at", inicio).lt("created_at", fimMais)) : Promise.resolve([]),
       app.pode("materia_ver") ? q<{ quantidade: number; tipo: string; estorno_de: string | null; materiais: { nome: string; unidade: string; custo_medio: number } | null }[]>(
         sb().from("movimentacoes_estoque").select("quantidade,tipo,estorno_de,materiais(nome,unidade,custo_medio)").eq("empresa_id", app.empresa.id).eq("tipo", "saida").gte("created_at", inicio).lt("created_at", fimMais)) : Promise.resolve([]),
       app.pode("orcamentos_ver") || app.pode("orcamentos_criar") ? q<{ status: string; total: number; enviado_em: string | null }[]>(
@@ -42,9 +42,9 @@ function Conteudo() {
     const porCat: Record<string, number> = {};
     dados.gastos.forEach((g) => { porCat[g.categoria] = (porCat[g.categoria] || 0) + Number(g.valor); });
     const porMes: Record<string, { fat: number; custo: number; rec: number }> = {};
-    dados.pedidos.forEach((p) => { const m = p.created_at.slice(0, 7); porMes[m] ||= { fat: 0, custo: 0, rec: 0 }; porMes[m].fat += p.valor_total; porMes[m].custo += p.custo_real > 0 ? p.custo_real : p.custo_estimado || 0; porMes[m].rec += p.valor_pago; });
+    dados.pedidos.forEach((p) => { const m = p.created_at.slice(0, 7); porMes[m] ||= { fat: 0, custo: 0, rec: 0 }; porMes[m].fat += p.valor_total; porMes[m].custo += (p as { status_producao?: string }).status_producao === "concluida" && p.custo_real > 0 ? p.custo_real : p.custo_estimado || 0; porMes[m].rec += p.valor_pago; });
     const porCli: Record<string, { n: number; total: number; custo: number }> = {};
-    dados.pedidos.forEach((p) => { const c = p.clientes?.nome || "Sem cliente"; porCli[c] ||= { n: 0, total: 0, custo: 0 }; porCli[c].n++; porCli[c].total += p.valor_total; porCli[c].custo += p.custo_real > 0 ? p.custo_real : p.custo_estimado || 0; });
+    dados.pedidos.forEach((p) => { const c = p.clientes?.nome || "Sem cliente"; porCli[c] ||= { n: 0, total: 0, custo: 0 }; porCli[c].n++; porCli[c].total += p.valor_total; porCli[c].custo += (p as { status_producao?: string }).status_producao === "concluida" && p.custo_real > 0 ? p.custo_real : p.custo_estimado || 0; });
     const porMat: Record<string, { q: number; un: string; valor: number }> = {};
     dados.movs.forEach((m) => { if (!m.materiais) return; const k = m.materiais.nome; porMat[k] ||= { q: 0, un: m.materiais.unidade, valor: 0 }; porMat[k].q += Number(m.quantidade); porMat[k].valor += Number(m.quantidade) * m.materiais.custo_medio; });
     const porSt: Record<string, { n: number; total: number }> = {};

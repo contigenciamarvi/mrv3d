@@ -93,3 +93,41 @@ select pg_temp.falha($$select public.registrar_pagamento((select v from f3 where
 select pg_temp.falha($$select public.iniciar_ordem((select v from f3 where k = 'op2'))$$, 'F3 outra empresa não mexe na produção', 'não encontrada');
 reset role;
 \echo FASE 3 OK
+
+-- ===== Regressões da revisão da Fase 3
+reset role; set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select pg_temp.falha(format($$insert into public.pedidos(empresa_id, descricao, valor_total, valor_pago) values (%L, 'x', 100, 5000)$$, (select v from f3 where k = 'ea')), 'F3R1 recebido maior que o pedido bloqueado', 'não pode passar');
+insert into public.pedidos(empresa_id, descricao, valor_total, valor_pago, created_by) values ((select v from f3 where k = 'ea'), 'F3R1 autor', 100, 10, '00000000-0000-0000-0000-00000000000a');
+select pg_temp.ok((select created_by = '00000000-0000-0000-0000-00000000000c' from public.pedidos where descricao = 'F3R1 autor'), 'F3R1 autor do pedido é quem criou');
+select pg_temp.ok((select created_by = '00000000-0000-0000-0000-00000000000c' from public.pagamentos where pedido_id = (select id from public.pedidos where descricao = 'F3R1 autor')), 'F3R1 autor do pagamento é quem criou');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+insert into public.pedidos(empresa_id, descricao, valor_total) values ((select v from f3 where k = 'ea'), 'F3R2', 50);
+insert into f3 select 'p3', id from public.pedidos where descricao = 'F3R2';
+insert into public.pedido_itens(empresa_id, pedido_id, descricao, quantidade, valor_unitario, material_id, peso_g) values ((select v from f3 where k = 'ea'), (select v from f3 where k = 'p3'), 'Peça R', 1, 50, (select v from f3 where k = 'pla'), 50);
+select public.gerar_ordens_pedido((select v from f3 where k = 'p3'));
+insert into f3 select 'op4', id from public.ordens_producao where pedido_id = (select v from f3 where k = 'p3');
+update public.ordens_producao set impressora_id = (select v from f3 where k = 'imp') where id = (select v from f3 where k = 'op4');
+select public.liberar_ordem((select v from f3 where k = 'op4'));
+select pg_temp.falha($$update public.pedidos set status = 'cancelado' where id = (select v from f3 where k = 'p3')$$, 'F3R2 cancelar só pelo botão', 'cancelar');
+select pg_temp.falha($$update public.pedidos set custo_real = 1 where id = (select v from f3 where k = 'p3')$$, 'F3R2 custo real não é editado', 'sistema');
+select pg_temp.falha($$update public.pedidos set status = 'entregue' where id = (select v from f3 where k = 'p3')$$, 'F3R2 situação acompanha a produção', 'ordens de produção');
+select pg_temp.falha($$select public.consumir_reserva((select reserva_id from public.ordens_producao where id = (select v from f3 where k = 'op4')), 0.1)$$, 'F3R4 reserva da ordem não é consumida por fora', 'ordem de produção');
+select pg_temp.falha($$select public.liberar_reserva((select reserva_id from public.ordens_producao where id = (select v from f3 where k = 'op4')))$$, 'F3R4 reserva da ordem não é liberada por fora', 'ordem de produção');
+select public.iniciar_ordem((select v from f3 where k = 'op4'));
+select pg_temp.falha($$select public.cancelar_pedido((select v from f3 where k = 'p3'), 'desistiu')$$, 'F3R6 não cancela pedido com impressão em andamento', 'imprimindo');
+select public.finalizar_impressao((select v from f3 where k = 'op4'), 1, 50, 0, 0, null);
+select pg_temp.ok((select current_setting('app.mov_interna', true) <> '1'), 'F3R8 trava de estoque não fica aberta');
+select pg_temp.falha($$select public.estornar_movimentacao((select id from public.movimentacoes_estoque where ordem_id = (select v from f3 where k = 'op4') limit 1), 'tentativa')$$, 'F3R5 consumo da ordem não é estornado por fora', 'produção');
+select pg_temp.falha($$delete from public.pedidos where id = (select v from f3 where k = 'p3')$$, 'F3R10 pedido com produção não é excluído', 'cancelar');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000d1';
+insert into public.ordens_producao(empresa_id, pedido_id, descricao, custo_real_total, custo_material, status) values ((select v from f3 where k = 'ea'), (select v from f3 where k = 'p3'), 'forjada', 99999, 99999, 'planejada');
+select pg_temp.ok((select custo_real_total = 0 and custo_material = 0 from public.ordens_producao where descricao = 'forjada'), 'F3R3 ordem nova não traz custo');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select pg_temp.falha($$select public.estornar_pagamento((select id from public.pagamentos where not estornado limit 1), 'tentativa')$$, 'F3R12 comercial não estorna pagamento', 'financeiro');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+select pg_temp.falha(format($$insert into public.pedidos(empresa_id, descricao, orcamento_id) values ((select id from public.empresas where nome = 'Loja B'), 'x', %L)$$, (select v from f3 where k = 'orc')), 'F3R11 pedido não aponta para orçamento de outra loja', 'não encontrado');
+reset role;
+insert into public.pedidos(empresa_id, descricao, valor_total, status) values ((select v from f3 where k = 'ea'), 'F3R9 legado', 30, 'entregue');
+select pg_temp.ok((select status = 'entregue' and status_entrega = 'entregue' from public.pedidos where descricao = 'F3R9 legado'), 'F3R9 pedido legado criado como entregue mantém a situação');
+\echo REVISAO FASE 3 OK

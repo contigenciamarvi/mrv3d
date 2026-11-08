@@ -53,8 +53,9 @@ begin
     new.cancelado_em := coalesce(new.cancelado_em, now());
     return new;
   end if;
-  v_mudou_campos := tg_op = 'INSERT' or new.status_producao is distinct from old.status_producao or new.status_entrega is distinct from old.status_entrega;
-  if tg_op = 'UPDATE' and new.status is distinct from old.status and not v_mudou_campos then
+  v_mudou_campos := case when tg_op = 'INSERT' then not (new.status_producao = 'aguardando' and new.status_entrega = 'pendente')
+                         else new.status_producao is distinct from old.status_producao or new.status_entrega is distinct from old.status_entrega end;
+  if (tg_op = 'INSERT' or new.status is distinct from old.status) and not v_mudou_campos then
     -- quem mudou só a situação geral (telas antigas / links): traduz para os três status
     if new.status = 'entregue' then new.status_entrega := 'entregue'; if new.status_producao <> 'nao_aplica' then new.status_producao := 'concluida'; end if;
     elsif new.status = 'pronto' then if new.status_producao <> 'nao_aplica' then new.status_producao := 'concluida'; end if; if new.status_entrega = 'pendente' then new.status_entrega := 'pronto'; end if;
@@ -74,6 +75,48 @@ begin
 end; $$;
 drop trigger if exists trg_pedido_status on public.pedidos;
 create trigger trg_pedido_status before insert or update on public.pedidos for each row execute function private.sincronizar_status_pedido();
+
+-- Campos controlados pelo sistema: só mudam pelas funções (cancelar, produção, entrega, orçamento)
+create or replace function private.proteger_pedido() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare v_int boolean := coalesce(current_setting('app.ped_interno', true), '') = '1' or (select auth.uid()) is null;
+begin
+  if v_int then return new; end if;
+  if tg_op = 'INSERT' then
+    new.created_by := (select auth.uid());
+    if new.status = 'cancelado' then raise exception 'Pedido novo não pode nascer cancelado'; end if;
+    if new.valor_pago > new.valor_total then raise exception 'O valor recebido não pode passar do valor do pedido'; end if;
+    new.custo_real := 0; new.impostos_estimados := 0; new.orcamento_id := null; new.cancelado_em := null; new.motivo_cancelamento := null;
+    new.entregue_em := null; new.enviado_em := null;
+    return new;
+  end if;
+  if old.status = 'cancelado' or new.status = 'cancelado' then
+    if new.status is distinct from old.status then raise exception 'Use o botão Cancelar pedido (um pedido cancelado não volta)'; end if;
+  end if;
+  if new.custo_real is distinct from old.custo_real or new.impostos_estimados is distinct from old.impostos_estimados or new.orcamento_id is distinct from old.orcamento_id
+     or new.cancelado_em is distinct from old.cancelado_em or new.motivo_cancelamento is distinct from old.motivo_cancelamento
+     or new.status_entrega is distinct from old.status_entrega or new.created_by is distinct from old.created_by then
+    raise exception 'Este campo do pedido é atualizado pelo sistema (produção, entrega ou cancelamento)';
+  end if;
+  if new.status_producao is distinct from old.status_producao and not (old.status_producao in ('aguardando','nao_aplica') and new.status_producao in ('aguardando','nao_aplica')) then
+    raise exception 'A produção do pedido é atualizada pelas ordens de produção';
+  end if;
+  -- situação geral só muda direto em pedidos sem ordens de produção ativas
+  if new.status is distinct from old.status and exists (select 1 from public.ordens_producao where pedido_id = old.id and status not in ('cancelada','falha')) then
+    raise exception 'Este pedido tem ordens de produção: a situação acompanha a produção e a entrega';
+  end if;
+  return new;
+end; $$;
+
+create or replace function private.proteger_exclusao_pedido() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if (select auth.uid()) is not null and (exists (select 1 from public.pagamentos where pedido_id = old.id)
+      or exists (select 1 from public.ordens_producao where pedido_id = old.id and (consumo_registrado or status not in ('planejada','cancelada')))) then
+    raise exception 'Pedido com pagamentos ou produção não pode ser excluído: use Cancelar pedido';
+  end if;
+  return old;
+end; $$;
 
 -- ---------- Pagamentos parciais ---------------------------------------
 create table if not exists public.contas_financeiras (
@@ -109,6 +152,10 @@ create table if not exists public.pagamentos (
 create index if not exists pagamentos_pedido_idx on public.pagamentos(pedido_id);
 create index if not exists pagamentos_empresa_data_idx on public.pagamentos(empresa_id, data);
 alter table public.pagamentos enable row level security;
+drop trigger if exists trg_pedido_proteger on public.pedidos;
+create trigger trg_pedido_proteger before insert or update on public.pedidos for each row execute function private.proteger_pedido();
+drop trigger if exists trg_pedido_excluir on public.pedidos;
+create trigger trg_pedido_excluir before delete on public.pedidos for each row execute function private.proteger_exclusao_pedido();
 create policy pagamentos_ler on public.pagamentos for select using (private.tem_permissao(empresa_id, 'financeiro_ver') or private.tem_permissao(empresa_id, 'pedidos_ver'));
 create trigger trg_mesma_empresa before insert or update on public.pagamentos for each row execute function private.checar_mesma_empresa('pedido_id:pedidos', 'conta_id:contas_financeiras');
 create trigger trg_audemp_pagamentos after insert or update on public.pagamentos for each row execute function private.auditar_empresa();
@@ -118,8 +165,10 @@ create or replace function private.recalcular_pago(p_pedido uuid) returns void
 language plpgsql security definer set search_path = '' as $$
 begin
   perform set_config('app.pag_interno', '1', true);
+  perform set_config('app.ped_interno', '1', true);
   update public.pedidos set valor_pago = coalesce((select sum(valor) from public.pagamentos where pedido_id = p_pedido and not estornado), 0) where id = p_pedido;
   perform set_config('app.pag_interno', '0', true);
+  perform set_config('app.ped_interno', '0', true);
 end; $$;
 
 create or replace function private.proteger_valor_pago() returns trigger
@@ -139,7 +188,7 @@ language plpgsql security definer set search_path = '' as $$
 begin
   if new.valor_pago > 0 and not exists (select 1 from public.pagamentos where pedido_id = new.id) then
     insert into public.pagamentos(empresa_id, pedido_id, valor, data, forma, observacao, created_by)
-    values (new.empresa_id, new.id, new.valor_pago, new.created_at::date, new.forma_pagamento, 'Pago na criação do pedido', new.created_by);
+    values (new.empresa_id, new.id, least(new.valor_pago, greatest(new.valor_total, 0.01)), new.created_at::date, new.forma_pagamento, 'Pago na criação do pedido', coalesce((select auth.uid()), new.created_by));
   end if;
   return null;
 end; $$;
@@ -171,7 +220,7 @@ returns void language plpgsql security definer set search_path = '' as $$
 declare g public.pagamentos;
 begin
   select * into g from public.pagamentos where id = p_pagamento for update;
-  if g.id is null or not (private.pode(g.empresa_id, 'financeiro_ver') or private.pode(g.empresa_id, 'pedidos_editar')) then raise exception 'Pagamento não encontrado'; end if;
+  if g.id is null or not (private.pode(g.empresa_id, 'financeiro_ver') or (private.is_admin(g.empresa_id) and private.pode(g.empresa_id, 'pedidos_editar'))) then raise exception 'Estornar pagamentos é do financeiro ou da administração'; end if;
   if g.estornado then raise exception 'Este pagamento já foi estornado'; end if;
   if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Informe o motivo do estorno'; end if;
   update public.pagamentos set estornado = true, estornado_em = now(), motivo_estorno = trim(p_motivo) where id = g.id;
@@ -179,6 +228,7 @@ begin
 end; $$;
 
 -- ---------- Ordens de produção ----------------------------------------
+alter table public.movimentacoes_estoque add column if not exists ordem_id uuid;
 create table if not exists public.ordens_producao (
   id uuid primary key default gen_random_uuid(),
   empresa_id uuid not null references public.empresas(id) on delete cascade,
@@ -241,6 +291,15 @@ declare v_int boolean := coalesce(current_setting('app.op_interno', true), '') =
 begin
   if tg_op = 'INSERT' then
     new.numero := private.proximo_numero(new.empresa_id, 'op');
+    if not v_int then
+      new.status := 'planejada'; new.reserva_id := null; new.consumo_registrado := false; new.iniciada_em := null; new.horas_reais := null;
+      new.consumo_real_g := null; new.perdas_g := null; new.custo_material := 0; new.custo_energia := 0; new.custo_maquina := 0;
+      new.custos_adicionais := 0; new.custo_real_total := 0; new.motivo_falha := null; new.concluida_em := null; new.concluida_por := null;
+      new.created_by := (select auth.uid());
+    end if;
+    if new.operador_id is not null and not exists (select 1 from public.membros where empresa_id = new.empresa_id and user_id = new.operador_id) then
+      raise exception 'O operador precisa ser da equipe';
+    end if;
     return new;
   end if;
   if not v_int then
@@ -318,6 +377,7 @@ begin
          coalesce(sum(custo_real_total), 0)
     into v_ativas, v_concl, v_qual, v_acab, v_prod, v_custo
     from public.ordens_producao where pedido_id = p_pedido;
+  perform set_config('app.ped_interno', '1', true);
   update public.pedidos set
     custo_real = v_custo,
     status_producao = case
@@ -330,6 +390,7 @@ begin
     -- FLUXO D: tudo produzido → disponível para expedição
     status_entrega = case when v_ativas > 0 and v_concl = v_ativas and status_entrega = 'pendente' then 'pronto' else status_entrega end::public.status_entrega_pedido
   where id = p_pedido;
+  perform set_config('app.ped_interno', '0', true);
 end; $$;
 
 create or replace function private.op_mudar(p_op uuid, p_status public.status_op, p_obs text) returns void
@@ -422,12 +483,15 @@ begin
     select * into m from public.materiais where id = o.material_id;
     v_f := private.fator_gramas(m.unidade, m.peso_liquido_g);
     v_qtd := case when v_f > 0 then round((coalesce(p_consumo_g, 0) + coalesce(p_perdas_g, 0)) / v_f, 3) else 0 end;
+    perform set_config('app.op_interno', '1', true);
     if o.reserva_id is not null and exists (select 1 from public.reservas_materia_prima where id = o.reserva_id and status = 'ativa') then
       perform public.consumir_reserva(o.reserva_id, v_qtd);
+      update public.movimentacoes_estoque set ordem_id = o.id where reserva_id = o.reserva_id;
     elsif v_qtd > 0 then
       perform set_config('app.mov_interna', '1', true);
-      insert into public.movimentacoes_estoque(empresa_id, material_id, tipo, quantidade, observacao, pedido_id)
-      values (o.empresa_id, o.material_id, 'saida', v_qtd, 'Consumo OP-' || o.numero, o.pedido_id);
+      insert into public.movimentacoes_estoque(empresa_id, material_id, tipo, quantidade, observacao, pedido_id, ordem_id)
+      values (o.empresa_id, o.material_id, 'saida', v_qtd, 'Consumo OP-' || o.numero, o.pedido_id, o.id);
+      perform set_config('app.mov_interna', '0', true);
     end if;
     v_mat := round(v_qtd * m.custo_medio, 2);
   end if;
@@ -490,6 +554,7 @@ begin
   end if;
   -- reserva que sobrou volta para o estoque
   if o.reserva_id is not null and exists (select 1 from public.reservas_materia_prima where id = o.reserva_id and status = 'ativa') then
+    perform set_config('app.op_interno', '1', true);
     perform public.liberar_reserva(o.reserva_id);
   end if;
   perform set_config('app.op_interno', '1', true);
@@ -516,6 +581,7 @@ begin
   if o.status in ('concluida','cancelada','falha') then raise exception 'Ordem já está %', o.status; end if;
   if o.status in ('imprimindo','pausada') then raise exception 'Ordem em impressão: registre como falha ou finalize antes de cancelar'; end if;
   if o.reserva_id is not null and exists (select 1 from public.reservas_materia_prima where id = o.reserva_id and status = 'ativa') then
+    perform set_config('app.op_interno', '1', true);
     perform public.liberar_reserva(o.reserva_id);
   end if;
   perform private.op_mudar(o.id, 'cancelada', coalesce(nullif(trim(p_motivo), ''), 'Cancelada'));
@@ -530,6 +596,7 @@ begin
   o := private.op_carregar(p_op);
   if o.status not in ('na_fila','aguardando_material') then raise exception 'Só ordens na fila ou aguardando material voltam para planejada'; end if;
   if o.reserva_id is not null and exists (select 1 from public.reservas_materia_prima where id = o.reserva_id and status = 'ativa') then
+    perform set_config('app.op_interno', '1', true);
     perform public.liberar_reserva(o.reserva_id);
   end if;
   perform set_config('app.op_interno', '1', true);
@@ -572,8 +639,10 @@ begin
   select * into p from public.pedidos where id = p_pedido for update;
   if p.id is null or not (private.pode(p.empresa_id, 'pedidos_editar') or private.pode(p.empresa_id, 'expedicao_gerenciar')) then raise exception 'Pedido não encontrado'; end if;
   if p.status = 'cancelado' then raise exception 'Pedido cancelado'; end if;
+  perform set_config('app.ped_interno', '1', true);
   update public.pedidos set status_entrega = p_status, transportadora = coalesce(nullif(trim(p_transportadora), ''), transportadora),
          codigo_rastreio = coalesce(nullif(trim(p_rastreio), ''), codigo_rastreio) where id = p.id;
+  perform set_config('app.ped_interno', '0', true);
 end; $$;
 
 create or replace function public.cancelar_pedido(p_pedido uuid, p_motivo text)
@@ -584,17 +653,27 @@ begin
   if p.id is null or not private.pode(p.empresa_id, 'pedidos_editar') then raise exception 'Sem permissão para cancelar pedidos'; end if;
   if p.status = 'cancelado' then raise exception 'Pedido já cancelado'; end if;
   if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Informe o motivo do cancelamento'; end if;
+  if exists (select 1 from public.ordens_producao where pedido_id = p.id and status in ('imprimindo','pausada')) then
+    raise exception 'Há ordem imprimindo: finalize ou registre a falha (para baixar o material gasto) antes de cancelar o pedido';
+  end if;
+  perform set_config('app.op_interno', '1', true);
   for o in select id, status, reserva_id from public.ordens_producao where pedido_id = p.id and status not in ('concluida','cancelada','falha') loop
     if o.reserva_id is not null and exists (select 1 from public.reservas_materia_prima where id = o.reserva_id and status = 'ativa') then
-      perform public.liberar_reserva(o.reserva_id);
-    end if;
-    if o.status in ('imprimindo','pausada') then
-      update public.impressoras set status = 'disponivel' where id = (select impressora_id from public.ordens_producao where id = o.id) and status in ('imprimindo','pausada');
+      perform set_config('app.op_interno', '1', true);
+    perform public.liberar_reserva(o.reserva_id);
     end if;
     perform private.op_mudar(o.id, 'cancelada', 'Pedido cancelado: ' || trim(p_motivo));
   end loop;
+  perform set_config('app.ped_interno', '1', true);
   update public.pedidos set status = 'cancelado', motivo_cancelamento = trim(p_motivo), cancelado_em = now() where id = p.id;
+  perform set_config('app.ped_interno', '0', true);
+  perform set_config('app.op_interno', '0', true);
 end; $$;
+
+drop trigger if exists trg_mesma_empresa on public.pedidos;
+create trigger trg_mesma_empresa before insert or update on public.pedidos for each row execute function private.checar_mesma_empresa('cliente_id:clientes', 'orcamento_id:orcamentos');
+drop trigger if exists trg_mesma_empresa on public.pedido_itens;
+create trigger trg_mesma_empresa before insert or update on public.pedido_itens for each row execute function private.checar_mesma_empresa('pedido_id:pedidos', 'produto_id:produtos', 'material_id:materiais', 'impressora_id:impressoras');
 
 -- ---------- Financeiro --------------------------------------------------
 create table if not exists public.lancamentos (
@@ -659,7 +738,7 @@ begin
   if not private.tem_permissao(p_empresa, 'financeiro_ver') then raise exception 'Sem acesso ao financeiro'; end if;
   select * into c from public.empresa_config where empresa_id = p_empresa;
   -- competência (vendas do período)
-  select coalesce(sum(valor_total), 0), coalesce(sum(case when custo_real > 0 then custo_real else coalesce(custo_estimado, 0) end), 0), coalesce(sum(impostos_estimados), 0)
+  select coalesce(sum(valor_total), 0), coalesce(sum(case when status_producao = 'concluida' and custo_real > 0 then custo_real else coalesce(custo_estimado, 0) end), 0), coalesce(sum(impostos_estimados), 0)
     into v_fat, v_var, v_imp from public.pedidos where empresa_id = p_empresa and status <> 'cancelado' and created_at::date between p_inicio and p_fim;
   -- caixa (o que entrou/saiu de fato no período)
   select coalesce(sum(valor), 0) into v_receb from public.pagamentos where empresa_id = p_empresa and not estornado and data between p_inicio and p_fim;
@@ -722,6 +801,7 @@ begin
   end if;
   if o.pedido_id is not null then return o.pedido_id; end if;
   if o.status <> 'aprovado' then raise exception 'Somente orçamentos aprovados viram pedido'; end if;
+  perform set_config('app.ped_interno', '1', true);
   insert into public.pedidos(empresa_id, cliente_id, status, tipo_servico, descricao, valor_total, valor_pago, custo_estimado, data_entrega, origem, created_by, orcamento_id, impostos_estimados)
   values (o.empresa_id, o.cliente_id, 'aprovado', 'impressao_3d', o.titulo, o.total, 0, o.custo_total,
           current_date + coalesce(o.prazo_entrega_dias, 0), 'orcamento', (select auth.uid()), o.id, o.impostos_total + o.taxas_total)
@@ -735,6 +815,7 @@ begin
   perform set_config('app.orcamento_rpc', '1', true);
   update public.orcamentos set status = 'convertido', pedido_id = v_ped where id = o.id;
   perform private.snapshot_orcamento(o.id, 'convertido');
+  perform set_config('app.ped_interno', '0', true);
   perform public.gerar_ordens_pedido(v_ped);   -- FLUXO A: pedido já nasce com as ordens de produção planejadas
   perform set_config('app.orcamento_rpc', '0', true);
   return v_ped;
@@ -778,7 +859,7 @@ begin
   end if;
 
   if v_fin then
-    select coalesce(sum(valor_total), 0), coalesce(sum((case when custo_real > 0 then custo_real else coalesce(custo_estimado, 0) end)), 0) into v_fat, v_custo
+    select coalesce(sum(valor_total), 0), coalesce(sum((case when status_producao = 'concluida' and custo_real > 0 then custo_real else coalesce(custo_estimado, 0) end)), 0) into v_fat, v_custo
       from public.pedidos where empresa_id = p_empresa and status <> 'cancelado' and created_at::date between p_inicio and p_fim;
     select coalesce(sum(valor), 0) into v_desp from public.gastos where empresa_id = p_empresa and data between p_inicio and p_fim;
     select coalesce(sum(valor_pago), 0) into v_receb from public.pedidos where empresa_id = p_empresa and status <> 'cancelado' and created_at::date between p_inicio and p_fim;
@@ -802,7 +883,7 @@ begin
           from generate_series(p_inicio::timestamp, p_fim::timestamp, interval '1 day') d), '[]'::jsonb),
       'mensal', coalesce((select jsonb_agg(jsonb_build_object('mes', to_char(m, 'YYYY-MM'),
           'faturamento', (select coalesce(sum(valor_total), 0) from public.pedidos where empresa_id = p_empresa and status <> 'cancelado' and date_trunc('month', created_at) = m),
-          'lucro', (select coalesce(sum(valor_total - (case when custo_real > 0 then custo_real else coalesce(custo_estimado, 0) end)), 0) from public.pedidos where empresa_id = p_empresa and status <> 'cancelado' and date_trunc('month', created_at) = m)
+          'lucro', (select coalesce(sum(valor_total - (case when status_producao = 'concluida' and custo_real > 0 then custo_real else coalesce(custo_estimado, 0) end)), 0) from public.pedidos where empresa_id = p_empresa and status <> 'cancelado' and date_trunc('month', created_at) = m)
             - coalesce(c.custos_fixos_mensais, 0)) order by m)
           from generate_series(date_trunc('month', p_fim::timestamp) - interval '11 months', date_trunc('month', p_fim::timestamp), interval '1 month') m), '[]'::jsonb),
       'custos_categoria', coalesce((select jsonb_agg(jsonb_build_object('categoria', categoria, 'valor', v) order by v desc) from (
@@ -911,4 +992,94 @@ begin
     end if;
   end if;
   return r;
+end; $$;
+
+-- Reservas e movimentações de ordens de produção só pela própria ordem
+
+
+create or replace function public.consumir_reserva(p_reserva uuid, p_quantidade_real numeric)
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare r public.reservas_materia_prima; m public.materiais; v_mov uuid; v_g numeric;
+begin
+  select * into r from public.reservas_materia_prima where id = p_reserva for update;
+  if r.id is null or not (private.pode(r.empresa_id, 'materia_movimentar') or private.pode(r.empresa_id, 'producao_gerenciar')) then raise exception 'Reserva não encontrada'; end if;
+  if r.status <> 'ativa' then raise exception 'Esta reserva já foi %', r.status; end if;
+  if exists (select 1 from public.ordens_producao where reserva_id = r.id) and coalesce(current_setting('app.op_interno', true), '') <> '1' then
+    raise exception 'Esta reserva pertence a uma ordem de produção: use os botões da produção';
+  end if;
+  if p_quantidade_real is null or p_quantidade_real < 0 then raise exception 'Quantidade real inválida'; end if;
+  select * into m from public.materiais where id = r.material_id for update;
+  -- pode consumir a própria reserva + o que estiver livre, nunca reservas de outras produções
+  if p_quantidade_real > r.quantidade + (m.quantidade - m.quantidade_reservada) and not m.permite_negativo then
+    raise exception 'Consumo de % % passa do reservado (% %) mais o disponível (% %)', p_quantidade_real, m.unidade, r.quantidade, m.unidade, greatest(m.quantidade - m.quantidade_reservada, 0), m.unidade;
+  end if;
+  perform set_config('app.mov_interna', '1', true);
+  update public.materiais set quantidade_reservada = greatest(quantidade_reservada - r.quantidade, 0) where id = m.id;
+  if p_quantidade_real > 0 then
+    insert into public.movimentacoes_estoque(empresa_id, material_id, tipo, quantidade, observacao, pedido_id, reserva_id, bobina_id)
+    values (r.empresa_id, r.material_id, 'saida', p_quantidade_real, coalesce('Consumo: ' || r.referencia, 'Consumo de produção'), r.pedido_id, r.id, r.bobina_id)
+    returning id into v_mov;
+  end if;
+  if r.bobina_id is not null then
+    v_g := private.fator_gramas(m.unidade, m.peso_liquido_g);
+    update public.material_bobinas
+       set reservado_g = greatest(reservado_g - r.quantidade * v_g, 0),
+           consumido_g = least(consumido_g + p_quantidade_real * v_g, peso_inicial_g)
+     where id = r.bobina_id;
+  end if;
+  update public.reservas_materia_prima set status = 'consumida', quantidade_consumida = p_quantidade_real, finalizada_em = now() where id = r.id;
+  perform set_config('app.mov_interna', '0', true);
+  return v_mov;
+end; $$;
+
+create or replace function public.liberar_reserva(p_reserva uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+declare r public.reservas_materia_prima; m public.materiais;
+begin
+  select * into r from public.reservas_materia_prima where id = p_reserva for update;
+  if r.id is null or not (private.pode(r.empresa_id, 'materia_movimentar') or private.pode(r.empresa_id, 'producao_gerenciar')) then raise exception 'Reserva não encontrada'; end if;
+  if r.status <> 'ativa' then raise exception 'Esta reserva já foi %', r.status; end if;
+  if exists (select 1 from public.ordens_producao where reserva_id = r.id) and coalesce(current_setting('app.op_interno', true), '') <> '1' then
+    raise exception 'Esta reserva pertence a uma ordem de produção: use os botões da produção';
+  end if;
+  select * into m from public.materiais where id = r.material_id for update;
+  perform set_config('app.mov_interna', '1', true);
+  update public.materiais set quantidade_reservada = greatest(quantidade_reservada - r.quantidade, 0) where id = m.id;
+  if r.bobina_id is not null then
+    update public.material_bobinas set reservado_g = greatest(reservado_g - r.quantidade * private.fator_gramas(m.unidade, m.peso_liquido_g), 0) where id = r.bobina_id;
+  end if;
+  update public.reservas_materia_prima set status = 'liberada', finalizada_em = now() where id = r.id;
+  perform set_config('app.mov_interna', '0', true);
+end; $$;
+
+create or replace function public.estornar_movimentacao(p_mov uuid, p_motivo text)
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare o public.movimentacoes_estoque; v_id uuid; v_tipo public.tipo_movimentacao; v_qtd numeric;
+begin
+  select * into o from public.movimentacoes_estoque where id = p_mov;
+  if o.id is null or not private.pode(o.empresa_id, 'materia_movimentar') then raise exception 'Movimentação não encontrada'; end if;
+  if o.estorno_de is not null then raise exception 'Não é possível estornar um estorno'; end if;
+  if o.reserva_id is not null or o.ordem_id is not null then raise exception 'Consumo de produção não é estornado aqui: registre a correção na ordem de produção (ex.: entrada manual com justificativa)'; end if;
+  if exists (select 1 from public.movimentacoes_estoque where estorno_de = p_mov) then raise exception 'Esta movimentação já foi estornada'; end if;
+  if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Informe o motivo do estorno'; end if;
+  if o.tipo = 'entrada' then v_tipo := 'saida'; v_qtd := o.quantidade;
+  elsif o.tipo = 'saida' then v_tipo := 'entrada'; v_qtd := o.quantidade;
+  else
+    -- ajuste é desfeito pela diferença que ele causou (não volta ao saldo absoluto, que apagaria lançamentos posteriores)
+    if o.saldo_antes is null then raise exception 'Ajuste antigo sem saldo anterior registrado: faça um novo inventário'; end if;
+    v_qtd := abs(o.saldo_apos - o.saldo_antes);
+    if v_qtd = 0 then raise exception 'Este ajuste não mudou o saldo'; end if;
+    v_tipo := case when o.saldo_apos > o.saldo_antes then 'saida' else 'entrada' end;
+  end if;
+  perform set_config('app.mov_interna', '1', true);
+  -- saída de bobina estornada devolve os gramas para a bobina
+  if o.bobina_id is not null and o.tipo = 'saida' then
+    update public.material_bobinas b set consumido_g = greatest(b.consumido_g - o.quantidade * coalesce(private.fator_gramas(m.unidade, m.peso_liquido_g), 0), 0)
+      from public.materiais m where b.id = o.bobina_id and m.id = o.material_id;
+  end if;
+  insert into public.movimentacoes_estoque(empresa_id, material_id, tipo, quantidade, justificativa, observacao, estorno_de)
+  values (o.empresa_id, o.material_id, v_tipo, v_qtd, trim(p_motivo), 'Estorno', o.id)
+  returning id into v_id;
+  perform set_config('app.mov_interna', '0', true);
+  return v_id;
 end; $$;

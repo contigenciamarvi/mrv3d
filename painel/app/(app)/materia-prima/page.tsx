@@ -15,7 +15,7 @@ type Mat = {
   data_entrada: string | null; ativo: boolean; permite_negativo: boolean;
 };
 type Mov = { id: string; material_id: string; tipo: string; quantidade: number; custo_unitario: number | null; observacao: string | null; justificativa: string | null;
-  estorno_de: string | null; reserva_id: string | null; saldo_antes: number | null; saldo_apos: number | null; created_at: string; materiais?: { nome: string; unidade: string; cor: string | null } };
+  estorno_de: string | null; reserva_id: string | null; ordem_id?: string | null; saldo_antes: number | null; saldo_apos: number | null; created_at: string; materiais?: { nome: string; unidade: string; cor: string | null } };
 type Bobina = { id: string; material_id: string; codigo: string; peso_inicial_g: number; consumido_g: number; reservado_g: number; saldo_fisico_g: number; disponivel_g: number; lote: string | null; data_abertura: string | null; ativa: boolean };
 type Reserva = { id: string; material_id: string; quantidade: number; referencia: string | null; status: string; created_at: string; bobina_id: string | null };
 type Aba = "itens" | "movimentacoes" | "reposicao" | "bobinas" | "reservas";
@@ -169,7 +169,7 @@ function Conteudo() {
                   <Td className="tnum">{mv.tipo === "saida" ? "−" : mv.tipo === "entrada" ? "+" : "="}{num(mv.quantidade)} {mv.materiais?.unidade}{verCusto && mv.custo_unitario != null && <div className="text-xs text-slate-500">{brl(mv.custo_unitario)}/un</div>}</Td>
                   <Td className="tnum text-slate-500">{mv.saldo_antes != null ? `${num(mv.saldo_antes)} → ${num(mv.saldo_apos)}` : "—"}</Td>
                   <Td className="max-w-64 text-slate-600 dark:text-slate-300">{[mv.observacao, mv.justificativa].filter(Boolean).join(" — ")}</Td>
-                  <Td>{podeMov && !mv.estorno_de && !mv.reserva_id && !estornadas.has(mv.id) && (
+                  <Td>{podeMov && !mv.estorno_de && !mv.reserva_id && !mv.ordem_id && !estornadas.has(mv.id) && (
                     <button onClick={() => setEstorno({ mv, motivo: "" })} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><Undo2 className="h-3 w-3" /> Estornar</button>)}</Td>
                 </tr>
               ))}

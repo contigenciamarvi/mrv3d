@@ -1,6 +1,7 @@
 -- Réplica mínima do banco atual (Supabase) para testar as migrações localmente.
 create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
 create schema auth; create schema private; create schema extensions; create schema storage;
+create extension if not exists pgcrypto with schema extensions;
 grant usage on schema public, auth, storage to anon, authenticated;
 
 create table auth.users (id uuid primary key default gen_random_uuid(), email text unique, last_sign_in_at timestamptz, banned_until timestamptz, created_at timestamptz default now());

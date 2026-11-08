@@ -1,0 +1,116 @@
+-- Testes do módulo Bambu Lab / biblioteca de projetos / orçamento automático (depois de fase4.sql)
+\set ON_ERROR_STOP 1
+set client_min_messages = notice;
+reset role; reset request.jwt.claim.sub;
+create temp table bb(k text primary key, v uuid); grant all on bb to authenticated, anon;
+create temp table bt(k text primary key, t text); grant all on bt to authenticated, anon;
+insert into bb select 'ea', id from public.empresas where nome = 'Loja A';
+insert into bb select 'eb', id from public.empresas where nome = 'Loja B';
+insert into bb select 'pla', id from public.materiais where codigo = 'PLA-PT';
+insert into bb select 'imp', id from public.impressoras where nome = 'Bambu P1S';
+reset role;
+insert into public.materiais(empresa_id, nome, cor, unidade, categoria, material) values ((select v from bb where k = 'ea'), 'PETG', 'Branco', 'kg', 'filamento', 'PETG');
+insert into bb select 'petg', id from public.materiais where nome = 'PETG' and cor = 'Branco';
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select public.movimentar_materia_prima((select v from bb where k = 'petg'), 'entrada', 2, 80, null);
+
+-- ===================== BIBLIOTECA =====================
+insert into public.projetos_3d(empresa_id, nome, origem, arquivo_path, arquivo_nome, formato, sha256, pecas, placas, tempo_estimado_min, peso_g, materiais, cores)
+values ((select v from bb where k = 'ea'), 'Suporte headset', 'upload', (select v from bb where k = 'ea') || '/projetos/a.gcode.3mf', 'a.gcode.3mf', 'gcode.3mf', repeat('a', 64), 4, 1, 120, 50, '{PLA}', '{#000000}');
+insert into bb select 'proj', id from public.projetos_3d where nome = 'Suporte headset';
+select pg_temp.ok((select licenca = 'propria' and uso_comercial = 'permitido' from public.projetos_3d where id = (select v from bb where k = 'proj')), 'BB upload próprio = uso comercial permitido');
+select pg_temp.falha(format($$insert into public.projetos_3d(empresa_id, nome, arquivo_path, sha256) values (%L, 'dup', %L, %L)$$, (select v from bb where k = 'ea'), (select v from bb where k = 'ea') || '/projetos/b.stl', repeat('a', 64)), 'BB duplicado pelo hash bloqueado', 'projetos_sha_uq');
+select pg_temp.falha(format($$insert into public.projetos_3d(empresa_id, nome, origem, arquivo_path) values (%L, 'x', 'sincronizado', %L)$$, (select v from bb where k = 'ea'), (select v from bb where k = 'ea') || '/projetos/c.stl'), 'BB origem sincronizado só pela integração', 'integração');
+select pg_temp.falha(format($$insert into public.projetos_3d(empresa_id, nome, arquivo_path) values (%L, 'x', %L)$$, (select v from bb where k = 'ea'), (select v from bb where k = 'eb') || '/projetos/c.stl'), 'BB arquivo de outra loja bloqueado', 'check');
+select pg_temp.falha($$update public.projetos_3d set sha256 = repeat('b', 64) where nome = 'Suporte headset'$$, 'BB arquivo do projeto não muda', 'nova versão');
+-- MakerWorld
+insert into public.projetos_3d(empresa_id, nome, origem, makerworld_url, autor, licenca) values ((select v from bb where k = 'ea'), 'Vaso Voronoi', 'makerworld', 'https://makerworld.com/en/models/12345', 'Fulano', 'sdfl');
+select pg_temp.ok((select uso_comercial = 'proibido' from public.projetos_3d where nome = 'Vaso Voronoi'), 'BB licença padrão do MakerWorld = sem uso comercial');
+select pg_temp.falha(format($$insert into public.projetos_3d(empresa_id, nome, origem, makerworld_url) values (%L, 'dup', 'makerworld', 'https://MAKERWORLD.com/en/models/12345')$$, (select v from bb where k = 'ea')), 'BB link do MakerWorld duplicado', 'projetos_mw_uq');
+select pg_temp.falha(format($$insert into public.projetos_3d(empresa_id, nome, origem, makerworld_url) values (%L, 'x', 'makerworld', 'https://evil.com/makerworld.com/')$$, (select v from bb where k = 'ea')), 'BB só links do MakerWorld', 'check');
+select pg_temp.falha($$select public.projeto_criar_orcamento((select id from public.projetos_3d where nome = 'Vaso Voronoi'), null, 1)$$, 'BB licença não comercial bloqueia orçamento', 'licença');
+update public.projetos_3d set licenca = 'licenca_comercial' where nome = 'Vaso Voronoi';
+select pg_temp.ok((select uso_comercial = 'permitido' from public.projetos_3d where nome = 'Vaso Voronoi'), 'BB licença comercial comprada libera');
+select pg_temp.ok((select count(*) >= 3 from public.integracao_eventos where empresa_id = (select v from bb where k = 'ea') and tipo in ('importacao','atualizacao')), 'BB histórico registra importação e atualização');
+
+-- reutilização
+insert into bb values ('orc', public.projeto_criar_orcamento((select v from bb where k = 'proj'), null, 2));
+select pg_temp.ok((select i.peso_g = 50 and i.tempo_h = 2 and i.quantidade = 2 and i.arquivo_path like '%a.gcode.3mf' from public.orcamento_itens i where i.orcamento_id = (select v from bb where k = 'orc')), 'BB orçamento com peso e tempo do projeto');
+select pg_temp.ok((select count(*) = 1 from public.projeto_vinculos where projeto_id = (select v from bb where k = 'proj') and orcamento_id = (select v from bb where k = 'orc')), 'BB vínculo com orçamento');
+insert into bb values ('op', public.projeto_criar_ordem((select v from bb where k = 'proj'), 3, null, (select v from bb where k = 'imp')));
+select pg_temp.ok((select peso_previsto_g = 150 and tempo_previsto_h = 6 and status = 'planejada' from public.ordens_producao where id = (select v from bb where k = 'op')), 'BB ordem de produção ×3');
+insert into public.produtos(empresa_id, nome) values ((select v from bb where k = 'ea'), 'Suporte headset (produto)');
+select public.projeto_vincular((select v from bb where k = 'proj'), 'produto', (select id from public.produtos where nome = 'Suporte headset (produto)'));
+select pg_temp.ok((select produto_id is not null from public.projetos_3d where id = (select v from bb where k = 'proj')), 'BB vinculado ao produto');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000d2';
+select pg_temp.falha($$select public.projeto_criar_ordem((select v from bb where k = 'proj'), 1, null, null)$$, 'BB expedição não cria ordem', 'permissão');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+select pg_temp.ok((select count(*) = 0 from public.projetos_3d) and (select count(*) = 0 from public.integracao_eventos), 'BB Loja B não vê a biblioteca da A');
+select pg_temp.falha($$select public.projeto_criar_orcamento((select v from bb where k = 'proj'), null, 1)$$, 'BB B não usa projeto da A', 'não encontrado');
+select pg_temp.falha(format($$select public.projeto_vincular((select v from bb where k = 'proj'), 'produto', %L)$$, gen_random_uuid()), 'BB B não vincula projeto da A', 'não encontrado');
+
+-- ===================== ORÇAMENTO MULTIMATERIAL =====================
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+insert into public.orcamentos(empresa_id, titulo) values ((select v from bb where k = 'ea'), 'BB multicolor');
+insert into bb select 'om', id from public.orcamentos where titulo = 'BB multicolor';
+insert into public.orcamento_itens(empresa_id, orcamento_id, descricao, material_id, impressora_id, quantidade, peso_g, tempo_h, desperdicio_pct, filamentos_extras, projeto_id, placa)
+values ((select v from bb where k = 'ea'), (select v from bb where k = 'om'), 'Placa 1', (select v from bb where k = 'pla'), (select v from bb where k = 'imp'), 1, 100, 2, 0,
+        jsonb_build_array(jsonb_build_object('material_id', (select v from bb where k = 'petg'), 'peso_g', 50)), (select v from bb where k = 'proj'), 1);
+select pg_temp.ok((select custo_material = round(100.0 / 1000 * preco_kg + 50.0 / 1000 * 80, 4) and (filamentos_extras->0->>'preco_kg')::numeric = 80
+  from public.orcamento_itens where orcamento_id = (select v from bb where k = 'om')), 'BB custo soma cada filamento com seu preço/kg');
+select pg_temp.falha(format($$insert into public.orcamento_itens(empresa_id, orcamento_id, descricao, filamentos_extras) values (%L, %L, 'x', %L)$$, (select v from bb where k = 'ea'), (select v from bb where k = 'om'),
+  jsonb_build_array(jsonb_build_object('material_id', (select id from public.materiais where empresa_id = (select v from bb where k = 'ea') limit 0), 'peso_g', -1))::text), 'BB peso negativo bloqueado', 'inválido');
+reset role;
+insert into public.materiais(empresa_id, nome, unidade) values ((select v from bb where k = 'eb'), 'PLA da B', 'kg');
+insert into bb select 'plab', id from public.materiais where nome = 'PLA da B';
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.falha(format($$insert into public.orcamento_itens(empresa_id, orcamento_id, descricao, filamentos_extras) values (%L, %L, 'x', %L)$$, (select v from bb where k = 'ea'), (select v from bb where k = 'om'),
+  jsonb_build_array(jsonb_build_object('material_id', (select v from bb where k = 'plab'), 'peso_g', 10))::text), 'BB material de outra loja no item', 'não encontrada');
+select pg_temp.ok((select count(*) = 1 from public.projeto_vinculos where orcamento_id = (select v from bb where k = 'om')), 'BB item com projeto vincula o orçamento');
+-- custos fixos rateados
+reset role; update public.empresa_config set custos_fixos_mensais = 1000, horas_produtivas_mes = 200 where empresa_id = (select v from bb where k = 'ea');
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.orcamento_itens set descricao = 'Placa 1 ' where orcamento_id = (select v from bb where k = 'om');
+select pg_temp.ok((select custo_fixo = 10 and preco_unitario = round((custo_unitario + 10) / (1 - (margem_efetiva + impostos_efetivo + taxas_efetiva) / 100), 2) and custo_total = round(custo_unitario, 2)
+  from public.orcamento_itens where orcamento_id = (select v from bb where k = 'om')), 'BB custos fixos (R$ 5/h × 2 h) entram no preço, não no custo variável');
+insert into bb values ('omd', public.duplicar_orcamento((select v from bb where k = 'om')));
+select pg_temp.ok((select jsonb_array_length(filamentos_extras) = 1 and projeto_id is not null from public.orcamento_itens where orcamento_id = (select v from bb where k = 'omd')), 'BB duplicar mantém filamentos e projeto');
+reset role; update public.empresa_config set horas_produtivas_mes = 0 where empresa_id = (select v from bb where k = 'ea');
+
+-- ===================== AGENTE LOCAL =====================
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select pg_temp.falha($$select public.criar_agente((select v from bb where k = 'ea'), 'PC da oficina')$$, 'BB comercial não cria agente', 'administração');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+insert into bt values ('tok', public.criar_agente((select v from bb where k = 'ea'), 'PC da oficina'));
+select pg_temp.ok((select t ~ '^mrv3d_ag_[0-9a-f]{64}$' from bt where k = 'tok'), 'BB token do agente gerado');
+select pg_temp.falha($$select token_hash from public.agentes_locais$$, 'BB hash do token não é lido pela tela');
+update public.impressoras set bambu_serial = '01P00A123456789' where id = (select v from bb where k = 'imp');
+select pg_temp.falha($$insert into public.impressora_telemetria(impressora_id, empresa_id, dados, fonte) values ((select v from bb where k = 'imp'), (select v from bb where k = 'ea'), '{"progresso": 99}', 'agente_lan')$$, 'BB telemetria não é forjada pela tela');
+set role anon; reset request.jwt.claim.sub;
+select pg_temp.falha($$select public.agente_reportar('mrv3d_ag_' || repeat('0', 64), '{"impressoras": []}')$$, 'BB token falso recusado', 'inválido');
+select pg_temp.ok((select (public.agente_reportar((select t from bt where k = 'tok'), jsonb_build_object('versao', '1.0', 'impressoras', jsonb_build_array(
+  jsonb_build_object('serial', '01p00a123456789', 'estado', 'RUNNING', 'progresso', 42, 'temp_bico', 220.5, 'restante_min', 35, 'hack', 'x', 'arquivo', '<script>'),
+  jsonb_build_object('serial', 'XYZ999888777', 'nome', 'A1 nova', 'modelo', 'A1')))))->>'atualizadas' = '1'), 'BB agente atualiza a impressora vinculada');
+reset role;
+select pg_temp.ok((select dados->>'progresso' = '42' and not (dados ? 'hack') and fonte = 'agente_lan' from public.impressora_telemetria where impressora_id = (select v from bb where k = 'imp')), 'BB telemetria só com campos conhecidos');
+select pg_temp.ok((select count(*) = 0 from public.auditoria where entidade = 'impressoras' and detalhes::text like '%progresso%'), 'BB telemetria não enche a auditoria');
+select pg_temp.ok((select impressoras_detectadas->0->>'serial' = 'XYZ999888777' from public.agentes_locais where nome = 'PC da oficina'), 'BB impressora não vinculada aparece como detectada');
+select pg_temp.ok((select status = 'conectada' and modo = 'agente_lan' from public.integracoes where empresa_id = (select v from bb where k = 'ea')), 'BB integração conectada pelo agente');
+set role anon;
+select pg_temp.ok((select (public.agente_reportar((select t from bt where k = 'tok'), '{"impressoras": []}'))->>'ignorado' = 'true'), 'BB envios em sequência são limitados');
+select pg_temp.falha($$select public.agente_reportar((select t from bt where k = 'tok'), jsonb_build_object('impressoras', (select jsonb_agg(jsonb_build_object('serial', 'AAAAAA' || g)) from generate_series(1, 51) g)))$$, 'BB limite de 50 impressoras por envio');
+-- desconectar apaga credenciais e revoga
+reset role;
+select private.salvar_credencial((select v from bb where k = 'ea'), 'bambu_lab', 'token-secreto', null, null);
+select pg_temp.ok((select token_cifrado::text not like '%token-secreto%' from private.integracao_credenciais) and private.ler_credencial((select v from bb where k = 'ea'), 'bambu_lab') = 'token-secreto', 'BB token guardado criptografado');
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.falha($$select * from private.integracao_credenciais$$, 'BB credenciais fora do alcance da tela');
+select pg_temp.falha($$select private.ler_credencial((select v from bb where k = 'ea'), 'bambu_lab')$$, 'BB tela não decifra credenciais');
+select public.desconectar_integracao((select v from bb where k = 'ea'), 'bambu_lab');
+reset role;
+select pg_temp.ok((select count(*) = 0 from private.integracao_credenciais) and (select bool_and(not ativo) from public.agentes_locais)
+  and (select count(*) = 0 from public.impressora_telemetria), 'BB desconectar apaga credenciais, revoga agentes e limpa telemetria');
+set role anon;
+select pg_temp.falha($$select public.agente_reportar((select t from bt where k = 'tok'), '{"impressoras": []}')$$, 'BB agente revogado não envia', 'revogado');
+reset role;
+\echo BAMBU OK

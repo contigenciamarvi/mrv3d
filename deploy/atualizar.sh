@@ -37,6 +37,9 @@ done
 echo "notify pgrst, 'reload schema';" | $DB
 echo "banco em dia"
 
+# soma de verificação do agente local (o usuário confere o download)
+( cd "$DIR/painel/public/agente" && sha256sum mrv3d_agente.py > mrv3d_agente.py.sha256 ) 2>/dev/null || true
+
 construir() { # $1 = pasta do app
   docker run --rm -v "$DIR/$1":/app -w /app node:22-alpine sh -c "npm ci --no-audit --no-fund --loglevel=error && npm run build" >/tmp/build-$1.log 2>&1 \
     || { echo "ERRO ao montar $1 (veja /tmp/build-$1.log). O site continua na versão anterior."; tail -20 /tmp/build-$1.log; exit 1; }

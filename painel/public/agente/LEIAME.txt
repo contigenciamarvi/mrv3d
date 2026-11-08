@@ -1,0 +1,53 @@
+MRV3D — Agente local de monitoramento de impressoras (versão 0.1.0)
+====================================================================
+
+O que faz
+- Lê o estado das impressoras na rede da sua loja (Bambu Lab pela rede local, Klipper/Moonraker e OctoPrint)
+  e envia ao painel por HTTPS. Somente leitura: não pausa, não cancela e não envia impressões.
+- Não abre portas no roteador. As credenciais das impressoras (código de acesso LAN, chave de API)
+  ficam só neste computador, no arquivo ~/.mrv3d-agente/config.json (acesso restrito ao seu usuário).
+- Se a internet cair, guarda até 1000 eventos e envia quando voltar (sem duplicar).
+
+Requisitos
+- Python 3.9 ou mais novo (Windows, Linux ou Raspberry Pi OS).
+- Para Bambu Lab: pip install paho-mqtt
+- Conferir o download: compare com mrv3d_agente.py.sha256 (sha256sum mrv3d_agente.py  ou  certutil -hashfile mrv3d_agente.py SHA256 no Windows).
+
+Passo a passo
+1. No painel: Integrações > Bambu Lab > Configurações > "Conectar agente" — copie o código (vale 15 minutos).
+2. python3 mrv3d_agente.py parear CODIGO --site https://mrv3dsolutions.tech
+3. Adicione as impressoras:
+   Bambu Lab:  python3 mrv3d_agente.py adicionar bambu --nome "P1S 1" --ip 192.168.0.50 --serial NUMERO_DE_SERIE --codigo CODIGO_LAN
+               (IP e código de acesso: tela da impressora > Configurações > WLAN. Use "descobrir" para achar o IP e o número de série.)
+   Klipper:    python3 mrv3d_agente.py adicionar moonraker --nome "Voron" --ip 192.168.0.60
+   OctoPrint:  python3 mrv3d_agente.py adicionar octoprint --nome "Ender" --ip 192.168.0.70 --api-key CHAVE
+4. python3 mrv3d_agente.py testar
+5. No painel: Impressoras > Monitoramento > ligue cada impressora ao identificador mostrado pelo agente.
+6. python3 mrv3d_agente.py rodar   (deixe rodando)
+
+Iniciar sozinho no Linux / Raspberry Pi (systemd):
+   sudo tee /etc/systemd/system/mrv3d-agente.service >/dev/null <<'X'
+   [Unit]
+   Description=MRV3D agente de impressoras
+   After=network-online.target
+   [Service]
+   User=SEU_USUARIO
+   ExecStart=/usr/bin/python3 /home/SEU_USUARIO/mrv3d_agente.py rodar
+   Restart=always
+   RestartSec=10
+   [Install]
+   WantedBy=multi-user.target
+   X
+   sudo systemctl enable --now mrv3d-agente
+
+Iniciar sozinho no Windows: Agendador de Tarefas > Criar tarefa > "Ao fazer logon" > Ação: pythonw.exe mrv3d_agente.py rodar
+
+Bambu Lab — importante
+- Não pedimos nem guardamos a senha da sua conta Bambu Lab.
+- A leitura pela rede local usa o MQTT da impressora com o código de acesso LAN. Em firmwares com o controle de
+  autorização (2025+), a leitura pode exigir o modo "LAN Only" (e, em alguns modelos, o Modo Desenvolvedor),
+  conforme a documentação oficial da Bambu Lab. Ativar esses modos tem efeitos no app Bambu Handy: leia o aviso
+  da Bambu antes.
+- Câmera e controle remoto não estão disponíveis.
+
+Para remover: no painel, revogue o agente (Configurações) e apague a pasta ~/.mrv3d-agente.

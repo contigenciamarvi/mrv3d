@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, FileText, ShoppingCart, Factory, Printer, Boxes, Package, Truck, Wallet, Wrench, Send,
   BarChart3, Store, UserCog, Plug, Settings, CreditCard, PanelLeftClose, PanelLeftOpen, Moon, Sun, LogOut, Search,
-  Loader2, Bell, ChevronRight, Building2, X, AlertTriangle, Activity, Layers,
+  Loader2, Bell, ChevronRight, Building2, X, AlertTriangle, Activity, Layers, LifeBuoy,
 } from "lucide-react";
 import { sb, rpc } from "@/lib/supabase";
 import { cn, PAPEIS_EMPRESA } from "@/lib/utils";
@@ -47,6 +47,7 @@ const MENU: Item[] = [
   { href: "/integracoes/", label: "Integrações", icon: Plug, pronto: true },
   { href: "/configuracoes/", label: "Configurações", icon: Settings, perm: ["config_editar"], pronto: true },
   { href: "/assinatura/", label: "Minha Assinatura", icon: CreditCard, pronto: true },
+  { href: "/suporte/", label: "Suporte", icon: LifeBuoy, pronto: true },
 ];
 
 type Notif = { id: string; tipo: string; nivel: string; titulo: string; texto: string; link: string };
@@ -65,6 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [escuro, setEscuro] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notifs, setNotifs] = useState<Notif[]>([]);
+  const [manutencao, setManutencao] = useState<string | null>(null);
   const [lidas, setLidas] = useState<string[]>([]);
   const [abrirNotif, setAbrirNotif] = useState(false);
   const [busca, setBusca] = useState("");
@@ -120,6 +122,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => { window.removeEventListener("app-toast", onToast); window.removeEventListener("keydown", atalho); sub.subscription.unsubscribe(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // aviso de manutenção da plataforma
+  useEffect(() => {
+    if (!ctx) return;
+    const f = () => rpc<{ manutencao: boolean; manutencao_mensagem: string | null }>("plataforma_publica")
+      .then((p) => setManutencao(p?.manutencao ? (p.manutencao_mensagem || "A plataforma está em manutenção. Algumas funções podem ficar indisponíveis.") : null)).catch(() => {});
+    f(); const t = setInterval(f, 300000);
+    return () => clearInterval(t);
+  }, [ctx]);
 
   // notificações
   useEffect(() => {
@@ -288,6 +299,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200 print:hidden">
               Sua empresa está <b>{ctx.empresa.status}</b>: você pode consultar os dados, mas não pode fazer alterações. <Link href="/assinatura/" className="underline">Ver assinatura</Link>
             </div>
+          )}
+          {manutencao && (
+            <div role="status" className="border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200 print:hidden">{manutencao}</div>
           )}
           <main className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6 print:max-w-none print:p-0">
             {atual && (

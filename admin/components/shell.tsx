@@ -21,13 +21,13 @@ const MENU: { href: string; label: string; icon: typeof LayoutDashboard; pronto:
   { href: "/planos/", label: "Planos e Assinaturas", icon: Layers, pronto: true },
   { href: "/cobrancas/", label: "Cobranças", icon: Receipt, pronto: true, papeis: ["proprietario", "administrador", "financeiro", "suporte"] },
   { href: "/financeiro/", label: "Financeiro SaaS", icon: Wallet, pronto: true, papeis: ["proprietario", "administrador", "financeiro"] },
-  { href: "#", label: "Relatórios", icon: BarChart3, pronto: false },
+  { href: "/relatorios/", label: "Relatórios", icon: BarChart3, pronto: true },
   { href: "/uso/", label: "Uso da Plataforma", icon: Gauge, pronto: true },
-  { href: "#", label: "Suporte", icon: LifeBuoy, pronto: false },
-  { href: "#", label: "Notificações", icon: Bell, pronto: false },
-  { href: "#", label: "Integrações", icon: Plug, pronto: false },
+  { href: "/suporte/", label: "Suporte", icon: LifeBuoy, pronto: true, papeis: ["proprietario", "administrador", "suporte", "atendimento"] },
+  { href: "/notificacoes/", label: "Notificações", icon: Bell, pronto: true, papeis: ["proprietario", "administrador", "suporte"] },
+  { href: "/integracoes/", label: "Integrações", icon: Plug, pronto: true, papeis: ["proprietario", "administrador"] },
   { href: "/auditoria/", label: "Auditoria e Segurança", icon: ShieldCheck, pronto: true, papeis: ["proprietario", "administrador"] },
-  { href: "#", label: "Configurações", icon: Settings, pronto: false },
+  { href: "/configuracoes/", label: "Configurações", icon: Settings, pronto: true, papeis: ["proprietario", "administrador"] },
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {

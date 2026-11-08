@@ -12,7 +12,7 @@ import { Card, CardTitle, Kpi, Loading, ErrorBox, Empty, Input, Field, Select, B
 type Dash = {
   permissoes: Record<string, boolean>;
   faturamento_dia?: number; faturamento_mes?: number; faturamento_periodo?: number; lucro_bruto?: number; lucro_liquido_estimado?: number;
-  custos_fixos_periodo?: number; recebido_periodo?: number; despesas_periodo?: number; caixa_periodo?: number; contas_receber?: number;
+  custos_fixos_periodo?: number; contas_pagar?: number; ordens_ativas?: number; recebido_periodo?: number; despesas_periodo?: number; caixa_periodo?: number; contas_receber?: number;
   pedidos_recebidos?: number; pedidos_producao?: number; pedidos_atrasados?: number; orcamentos_aguardando?: number;
   orcamentos_aprovados_periodo?: number; orcamentos_enviados_periodo?: number; alertas_estoque?: number;
   impressoras?: { disponiveis: number; funcionando: number; manutencao: number; paradas: number; total: number };
@@ -77,11 +77,11 @@ export default function Dashboard() {
               <Kpi label="Faturamento hoje" valor={brl(d.faturamento_dia)} />
               <Kpi label="Faturamento no mês" valor={brl(d.faturamento_mes)} />
               <Kpi label="Faturamento no período" valor={brl(d.faturamento_periodo)} />
-              <Kpi label="Lucro bruto" valor={brl(d.lucro_bruto)} sub="Vendas − custo de produção estimado" tom={(d.lucro_bruto || 0) >= 0 ? "verde" : "vermelho"} />
+              <Kpi label="Lucro bruto" valor={brl(d.lucro_bruto)} sub="Vendas − custo de produção (real quando registrado)" tom={(d.lucro_bruto || 0) >= 0 ? "verde" : "vermelho"} />
               <Kpi label="Lucro líquido estimado" valor={brl(d.lucro_liquido_estimado)} sub={`Já desconta ${brl(d.custos_fixos_periodo)} de custos fixos`} tom={(d.lucro_liquido_estimado || 0) >= 0 ? "verde" : "vermelho"} />
               <Kpi label="Caixa do período" valor={brl(d.caixa_periodo)} sub={`Recebido ${brl(d.recebido_periodo)} − despesas ${brl(d.despesas_periodo)}`} />
               <Kpi label="Contas a receber" valor={brl(d.contas_receber)} sub="Saldo em aberto de todos os pedidos" />
-              <Kpi label="Contas a pagar" valor="—" sub="Chega com o módulo Financeiro" />
+              <Kpi label="Contas a pagar" valor={brl(d.contas_pagar)} sub={<Link href="/financeiro/?aba=pagar" className="underline">Ver contas</Link>} />
             </div>
           )}
 
@@ -89,7 +89,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               {d.permissoes.pedidos && <>
                 <Kpi label="Pedidos recebidos" valor={num(d.pedidos_recebidos, 0)} />
-                <Kpi label="Em produção" valor={num(d.pedidos_producao, 0)} sub="Agora" />
+                <Kpi label="Em produção" valor={num(d.pedidos_producao, 0)} sub={d.ordens_ativas != null ? <Link href="/producao/" className="underline">{d.ordens_ativas} ordem(ns) ativa(s)</Link> : "Agora"} />
                 <Kpi label="Atrasados" valor={num(d.pedidos_atrasados, 0)} tom={(d.pedidos_atrasados || 0) > 0 ? "vermelho" : undefined} sub="Agora" />
               </>}
               {d.permissoes.orcamentos && <Kpi label="Orçamentos aguardando" valor={num(d.orcamentos_aguardando, 0)}

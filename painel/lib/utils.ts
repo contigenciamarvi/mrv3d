@@ -98,3 +98,31 @@ export const STATUS_ASSINATURA: Record<string, string> = {
   teste: "Em teste", ativa: "Ativa", pendente: "Pendente", atrasada: "Atrasada", suspensa: "Suspensa", cancelada: "Cancelada",
 };
 export const UFS = "AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split(" ");
+
+// ---------- Fase 3 ----------
+export const STATUS_PAGAMENTO: Record<string, string> = { aguardando: "Aguardando pagamento", parcial: "Pago parcialmente", pago: "Pago" };
+export const STATUS_PRODUCAO: Record<string, string> = { aguardando: "Aguardando produção", em_producao: "Em produção", acabamento: "Acabamento", qualidade: "Controle de qualidade", concluida: "Produzido", nao_aplica: "Sem produção" };
+export const STATUS_ENTREGA: Record<string, string> = { pendente: "Entrega pendente", pronto: "Pronto para envio", enviado: "Enviado", entregue: "Entregue", retirado: "Retirado" };
+export const STATUS_OP: Record<string, string> = {
+  planejada: "Planejada", aguardando_material: "Aguardando material", na_fila: "Na fila", imprimindo: "Imprimindo", pausada: "Pausada",
+  falha: "Falha", acabamento: "Aguardando acabamento", qualidade: "Controle de qualidade", concluida: "Concluída", cancelada: "Cancelada",
+};
+export const PRIORIDADES: Record<string, string> = { baixa: "Baixa", normal: "Normal", alta: "Alta", urgente: "Urgente" };
+export const FORMAS_PAGAMENTO = ["Pix", "Dinheiro", "Cartão de crédito", "Cartão de débito", "Boleto", "Transferência", "Outro"];
+export const CAT_FINANCEIRO: Record<string, string> = {
+  filamentos: "Filamentos", resinas: "Resinas", energia: "Energia", manutencao: "Manutenção", equipamentos: "Equipamentos", embalagens: "Embalagens",
+  fretes: "Fretes", mao_de_obra: "Mão de obra", impostos: "Impostos", taxas_financeiras: "Taxas financeiras", publicidade: "Publicidade",
+  aluguel: "Aluguel", software: "Softwares e assinaturas", vendas: "Vendas", servicos: "Serviços", outros: "Outros",
+};
+/** Etapa única do pedido (lista do prompt), derivada dos três status independentes */
+export function etapaPedido(p: { status: string; status_pagamento: string; status_producao: string; status_entrega: string }): [string, string] {
+  if (p.status === "cancelado") return ["Cancelado", "cancelado"];
+  if (p.status_entrega === "entregue" || p.status_entrega === "retirado") return ["Entregue", "entregue"];
+  if (p.status_entrega === "enviado") return ["Enviado", "enviado"];
+  if (p.status_entrega === "pronto" || p.status_producao === "concluida") return ["Pronto para envio", "pronto"];
+  if (p.status_producao === "qualidade") return ["Controle de qualidade", "em_producao"];
+  if (p.status_producao === "acabamento") return ["Acabamento", "em_producao"];
+  if (p.status_producao === "em_producao") return ["Em produção", "em_producao"];
+  if (p.status_pagamento === "aguardando") return ["Aguardando pagamento", "pendente"];
+  return ["Aguardando produção", "aprovado"];
+}

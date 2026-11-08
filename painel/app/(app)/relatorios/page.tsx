@@ -27,8 +27,8 @@ function Conteudo() {
   const { dados, carregando, erro, recarregar } = useDados(async () => {
     const [gastos, pedidos, movs, orcs] = await Promise.all([
       q<{ categoria: string; valor: number; data: string; descricao: string; materiais: { tipo_compra: string } | null }[]>(sb().from("gastos").select("categoria,valor,data,descricao,materiais(tipo_compra)").eq("empresa_id", app.empresa.id).gte("data", inicio).lte("data", fim)),
-      app.pode("pedidos_ver") ? q<{ valor_total: number; valor_pago: number; custo_estimado: number | null; status: string; created_at: string; clientes: { nome: string } | null }[]>(
-        sb().from("pedidos").select("valor_total,valor_pago,custo_estimado,status,created_at,clientes(nome)").eq("empresa_id", app.empresa.id).neq("status", "cancelado").gte("created_at", inicio).lt("created_at", fimMais)) : Promise.resolve([]),
+      app.pode("pedidos_ver") ? q<{ valor_total: number; valor_pago: number; custo_estimado: number | null; custo_real: number; status: string; created_at: string; clientes: { nome: string } | null }[]>(
+        sb().from("pedidos").select("valor_total,valor_pago,custo_estimado,custo_real,status,created_at,clientes(nome)").eq("empresa_id", app.empresa.id).neq("status", "cancelado").gte("created_at", inicio).lt("created_at", fimMais)) : Promise.resolve([]),
       app.pode("materia_ver") ? q<{ quantidade: number; tipo: string; estorno_de: string | null; materiais: { nome: string; unidade: string; custo_medio: number } | null }[]>(
         sb().from("movimentacoes_estoque").select("quantidade,tipo,estorno_de,materiais(nome,unidade,custo_medio)").eq("empresa_id", app.empresa.id).eq("tipo", "saida").gte("created_at", inicio).lt("created_at", fimMais)) : Promise.resolve([]),
       app.pode("orcamentos_ver") || app.pode("orcamentos_criar") ? q<{ status: string; total: number; enviado_em: string | null }[]>(
@@ -42,9 +42,9 @@ function Conteudo() {
     const porCat: Record<string, number> = {};
     dados.gastos.forEach((g) => { porCat[g.categoria] = (porCat[g.categoria] || 0) + Number(g.valor); });
     const porMes: Record<string, { fat: number; custo: number; rec: number }> = {};
-    dados.pedidos.forEach((p) => { const m = p.created_at.slice(0, 7); porMes[m] ||= { fat: 0, custo: 0, rec: 0 }; porMes[m].fat += p.valor_total; porMes[m].custo += p.custo_estimado || 0; porMes[m].rec += p.valor_pago; });
+    dados.pedidos.forEach((p) => { const m = p.created_at.slice(0, 7); porMes[m] ||= { fat: 0, custo: 0, rec: 0 }; porMes[m].fat += p.valor_total; porMes[m].custo += p.custo_real > 0 ? p.custo_real : p.custo_estimado || 0; porMes[m].rec += p.valor_pago; });
     const porCli: Record<string, { n: number; total: number; custo: number }> = {};
-    dados.pedidos.forEach((p) => { const c = p.clientes?.nome || "Sem cliente"; porCli[c] ||= { n: 0, total: 0, custo: 0 }; porCli[c].n++; porCli[c].total += p.valor_total; porCli[c].custo += p.custo_estimado || 0; });
+    dados.pedidos.forEach((p) => { const c = p.clientes?.nome || "Sem cliente"; porCli[c] ||= { n: 0, total: 0, custo: 0 }; porCli[c].n++; porCli[c].total += p.valor_total; porCli[c].custo += p.custo_real > 0 ? p.custo_real : p.custo_estimado || 0; });
     const porMat: Record<string, { q: number; un: string; valor: number }> = {};
     dados.movs.forEach((m) => { if (!m.materiais) return; const k = m.materiais.nome; porMat[k] ||= { q: 0, un: m.materiais.unidade, valor: 0 }; porMat[k].q += Number(m.quantidade); porMat[k].valor += Number(m.quantidade) * m.materiais.custo_medio; });
     const porSt: Record<string, { n: number; total: number }> = {};
@@ -76,12 +76,12 @@ function Conteudo() {
             <Table head={["Categoria", "Valor", "%"]}>{r.cat.map((c) => <tr key={c.categoria}><Td>{CAT_GASTO[c.categoria]}</Td><Td className="tnum">{brl(c.valor)}</Td><Td className="tnum">{num((c.valor / totalGastos) * 100, 1)}%</Td></tr>)}</Table>
           </>)}
           {aba === "vendas" && (r.mes.length === 0 ? <Empty texto="Nenhum pedido no período" /> : <>
-            <CardTitle right={<Button size="sm" variant="secondary" onClick={() => csv("faturamento", [["Mês", "Faturamento", "Custo estimado", "Lucro bruto", "Recebido"], ...r.mes.map(([m, v]) => [m, v.fat, v.custo, v.fat - v.custo, v.rec].map((x) => String(x).replace(".", ",")))])}><Download className="h-4 w-4" /> CSV</Button>}>Faturamento por mês</CardTitle>
+            <CardTitle right={<Button size="sm" variant="secondary" onClick={() => csv("faturamento", [["Mês", "Faturamento", "Custo", "Lucro bruto", "Recebido"], ...r.mes.map(([m, v]) => [m, v.fat, v.custo, v.fat - v.custo, v.rec].map((x) => String(x).replace(".", ",")))])}><Download className="h-4 w-4" /> CSV</Button>}>Faturamento por mês</CardTitle>
             <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Kpi label="Faturamento" valor={brl(r.mes.reduce((s, [, v]) => s + v.fat, 0))} /><Kpi label="Recebido" valor={brl(r.mes.reduce((s, [, v]) => s + v.rec, 0))} />
               <Kpi label="Lucro bruto" valor={brl(r.mes.reduce((s, [, v]) => s + v.fat - v.custo, 0))} /><Kpi label="Ticket médio" valor={brl(dados!.pedidos.length ? r.mes.reduce((s, [, v]) => s + v.fat, 0) / dados!.pedidos.length : 0)} />
             </div>
-            <Table head={["Mês", "Faturamento", "Custo estimado", "Lucro bruto", "Recebido"]}>{r.mes.map(([m, v]) => <tr key={m}><Td>{m}</Td><Td className="tnum">{brl(v.fat)}</Td><Td className="tnum">{brl(v.custo)}</Td><Td className="tnum">{brl(v.fat - v.custo)}</Td><Td className="tnum">{brl(v.rec)}</Td></tr>)}</Table>
+            <Table head={["Mês", "Faturamento", "Custo", "Lucro bruto", "Recebido"]}>{r.mes.map(([m, v]) => <tr key={m}><Td>{m}</Td><Td className="tnum">{brl(v.fat)}</Td><Td className="tnum">{brl(v.custo)}</Td><Td className="tnum">{brl(v.fat - v.custo)}</Td><Td className="tnum">{brl(v.rec)}</Td></tr>)}</Table>
           </>)}
           {aba === "clientes" && (r.cli.length === 0 ? <Empty texto="Nenhum pedido no período" /> : <>
             <CardTitle right={<Button size="sm" variant="secondary" onClick={() => csv("clientes", [["Cliente", "Pedidos", "Faturamento", "Lucro bruto"], ...r.cli.map(([c, v]) => [c, v.n, String(v.total).replace(".", ","), String(v.total - v.custo).replace(".", ",")])])}><Download className="h-4 w-4" /> CSV</Button>}>Clientes no período</CardTitle>

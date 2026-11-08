@@ -7,6 +7,7 @@ import { sb, rpc, q, enviarArquivo } from "@/lib/supabase";
 import { toast, erro } from "@/lib/toast";
 import { cn, numOuNull, MATERIAIS_3D, TECNOLOGIAS, UFS, brl } from "@/lib/utils";
 import { Button, Card, Field, Input, Select, Textarea, Grid, Aviso } from "@/components/ui";
+import { CampoCep } from "@/components/cep";
 
 const ETAPAS = ["Empresa", "Impressoras", "Materiais", "Custos", "Preferências"];
 type Imp = { fabricante: string; modelo: string; nome: string; numero_serie: string; tecnologia: string; quantidade: string; potencia_w: string; custo_aquisicao: string; vida_util_horas: string; custo_manutencao_hora: string; volume: string };
@@ -149,7 +150,7 @@ export default function Onboarding() {
               {campoEmp("email", "E-mail", { type: "email" })}
               {campoEmp("whatsapp", "WhatsApp", { inputMode: "tel" })}
               {campoEmp("telefone", "Telefone", { inputMode: "tel" })}
-              {campoEmp("cep", "CEP", { maxLength: 10 })}
+              <CampoCep value={emp.cep} onChange={(v) => setEmp((x) => ({ ...x, cep: v }))} onEndereco={(e) => setEmp((x) => ({ ...x, endereco: e.endereco || x.endereco || "", cidade: e.cidade, uf: e.uf }))} />
             </Grid>
             {campoEmp("endereco", "Endereço")}
             <Grid>

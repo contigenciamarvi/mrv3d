@@ -8,6 +8,7 @@ import { useDados, useParam } from "@/lib/hooks";
 import { toast, erro } from "@/lib/toast";
 import { brl, data, linkWhats, numOuNull, ETAPAS_CRM, STATUS_PEDIDO, STATUS_ORCAMENTO, UFS, cn } from "@/lib/utils";
 import { Button, Card, Field, Input, Select, Textarea, Grid, Modal, Table, Td, Loading, ErrorBox, Empty, Badge, tomStatus, Tabs, Kpi, Confirmar, Paginacao } from "@/components/ui";
+import { CampoCep } from "@/components/cep";
 
 type Cliente = {
   id: string; nome: string; tipo_pessoa: string; documento: string | null; telefone: string | null; whatsapp: string | null; email: string | null;
@@ -145,7 +146,7 @@ function ClientesConteudo() {
             <Grid cols={3}>
               <Field label="Cidade"><Input value={form.cidade} onChange={(e) => setForm({ ...form, cidade: e.target.value })} /></Field>
               <Field label="Estado"><Select value={form.uf} onChange={(e) => setForm({ ...form, uf: e.target.value })}><option value="">—</option>{UFS.map((u) => <option key={u}>{u}</option>)}</Select></Field>
-              <Field label="CEP"><Input maxLength={10} value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} /></Field>
+              <CampoCep value={form.cep} onChange={(v) => setForm((x) => x && { ...x, cep: v })} onEndereco={(e) => setForm((x) => x && { ...x, endereco: e.endereco || x.endereco, cidade: e.cidade, uf: e.uf })} />
             </Grid>
             <Grid>
               <Field label="Etiquetas" hint="Separe por vírgula: ex. revenda, cosplay"><Input value={form.etiquetas} onChange={(e) => setForm({ ...form, etiquetas: e.target.value })} list="etiquetas-cli" /></Field>

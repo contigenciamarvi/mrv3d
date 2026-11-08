@@ -7,6 +7,7 @@ import { useDados } from "@/lib/hooks";
 import { toast, erro } from "@/lib/toast";
 import { brl, dataHora, numOuNull, UFS } from "@/lib/utils";
 import { Button, Card, Field, Input, Select, Textarea, Grid, Table, Td, Empty, Badge, Tabs, Checkbox, Aviso, Confirmar } from "@/components/ui";
+import { CampoCep } from "@/components/cep";
 
 type Aba = "empresa" | "precificacao" | "preferencias" | "links" | "dados" | "seguranca";
 
@@ -51,7 +52,7 @@ function Empresa() {
           <Grid cols={3}>
             {campo("nome", "Nome fantasia", { required: true })}{campo("razao_social", "Razão social")}{campo("documento", "CPF/CNPJ")}
             {campo("responsavel", "Responsável")}{campo("email", "E-mail", { type: "email" })}{campo("whatsapp", "WhatsApp")}
-            {campo("telefone", "Telefone")}{campo("cep", "CEP")}{campo("cidade", "Cidade")}
+            {campo("telefone", "Telefone")}<CampoCep value={f.cep} onChange={(v) => setF((x) => x && ({ ...x, cep: v }))} onEndereco={(e) => setF((x) => x && ({ ...x, endereco: e.endereco || x.endereco, cidade: e.cidade, uf: e.uf }))} />{campo("cidade", "Cidade")}
           </Grid>
           {campo("endereco", "Endereço")}
           <Field label="Estado"><Select value={f.uf} onChange={(e) => setF({ ...f, uf: e.target.value })} className="w-32"><option value="">—</option>{UFS.map((u) => <option key={u}>{u}</option>)}</Select></Field>

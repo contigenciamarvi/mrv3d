@@ -8,6 +8,7 @@ import { useDados } from "@/lib/hooks";
 import { toast, erro } from "@/lib/toast";
 import { brl, num, data, dataHora, numOuNull, linkWhats, STATUS_ENVIO, MODALIDADES_ENVIO, STATUS_PAGAMENTO, UFS, baixarCsv, csvNum, cn } from "@/lib/utils";
 import { Button, Card, CardTitle, Field, Input, Select, Textarea, Grid, Modal, Table, Td, Loading, ErrorBox, Empty, Badge, tomStatus, Checkbox, Confirmar, Aviso, Tabs, Kpi } from "@/components/ui";
+import { CampoCep } from "@/components/cep";
 
 type PedidoResumo = { id: string; numero: number; descricao: string | null; valor_total: number; valor_pago: number; status_pagamento: string; status_producao: string; status_entrega: string;
   data_entrega: string | null; clientes: { nome: string; whatsapp: string | null; telefone: string | null } | null };
@@ -181,7 +182,7 @@ function DetalheEnvio({ id, edita, onClose, onMudou }: { id: string; edita: bool
               <Grid cols={3}>
                 <Field label="Nome"><Input disabled={fechado} value={f.destinatario || ""} onChange={(ev) => setF({ ...f, destinatario: ev.target.value })} /></Field>
                 <Field label="Telefone"><Input disabled={fechado} value={f.telefone || ""} onChange={(ev) => setF({ ...f, telefone: ev.target.value })} /></Field>
-                <Field label="CEP"><Input disabled={fechado} value={f.cep || ""} onChange={(ev) => setF({ ...f, cep: ev.target.value })} /></Field>
+                <CampoCep disabled={fechado} value={f.cep} onChange={(v) => setF((x) => x && { ...x, cep: v })} onEndereco={(e) => setF((x) => x && { ...x, endereco: e.endereco || x.endereco, cidade: e.cidade, uf: e.uf })} />
                 <Field label="Endereço"><Input disabled={fechado} value={f.endereco || ""} onChange={(ev) => setF({ ...f, endereco: ev.target.value })} /></Field>
                 <Field label="Cidade"><Input disabled={fechado} value={f.cidade || ""} onChange={(ev) => setF({ ...f, cidade: ev.target.value })} /></Field>
                 <Field label="UF"><Select disabled={fechado} value={f.uf || ""} onChange={(ev) => setF({ ...f, uf: ev.target.value || null })}><option value="">—</option>{UFS.map((u) => <option key={u}>{u}</option>)}</Select></Field>

@@ -15,7 +15,7 @@ export type Config = {
   empresa_id: string; logo_path: string | null; energia_kwh: number; mao_obra_hora: number; margem_pct: number; impostos_pct: number;
   taxas_pct: number; desperdicio_pct: number; custos_fixos_mensais: number; embalagem_padrao: number; desconto_livre_pct: number;
   moeda: string; fuso: string; prefixo_pedido: string; prefixo_orcamento: string; prazo_padrao_dias: number; validade_orcamento_dias: number;
-  msg_orcamento: string; msg_pedido: string; onboarding_etapa: number; onboarding_concluido: boolean;
+  msg_orcamento: string; msg_pedido: string; onboarding_etapa: number; onboarding_concluido: boolean; horas_produtivas_mes?: number;
 };
 type Empresa = { id: string; nome: string; papel: string; status: string };
 type Ctx = {

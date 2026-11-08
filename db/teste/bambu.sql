@@ -19,7 +19,13 @@ insert into public.projetos_3d(empresa_id, nome, origem, arquivo_path, arquivo_n
 values ((select v from bb where k = 'ea'), 'Suporte headset', 'upload', (select v from bb where k = 'ea') || '/projetos/a.gcode.3mf', 'a.gcode.3mf', 'gcode.3mf', repeat('a', 64), 4, 1, 120, 50, '{PLA}', '{#000000}');
 insert into bb select 'proj', id from public.projetos_3d where nome = 'Suporte headset';
 select pg_temp.ok((select licenca = 'propria' and uso_comercial = 'permitido' from public.projetos_3d where id = (select v from bb where k = 'proj')), 'BB upload próprio = uso comercial permitido');
-select pg_temp.falha(format($$insert into public.projetos_3d(empresa_id, nome, arquivo_path, sha256) values (%L, 'dup', %L, %L)$$, (select v from bb where k = 'ea'), (select v from bb where k = 'ea') || '/projetos/b.stl', repeat('a', 64)), 'BB duplicado pelo hash bloqueado', 'projetos_sha_uq');
+select pg_temp.falha(format($$insert into public.projetos_3d(empresa_id, nome, arquivo_path, sha256) values (%L, 'dup', %L, %L)$$, (select v from bb where k = 'ea'), (select v from bb where k = 'ea') || '/projetos/b.stl', repeat('a', 64)), 'BB duplicado pelo hash bloqueado', 'já está na biblioteca');
+insert into public.projetos_3d(empresa_id, nome, arquivo_path, sha256, copia_de) values ((select v from bb where k = 'ea'), 'Suporte cópia', (select v from bb where k = 'ea') || '/projetos/a2.gcode.3mf', repeat('a', 64), (select v from bb where k = 'proj'));
+select pg_temp.ok((select copia_de is not null and versao = 1 from public.projetos_3d where nome = 'Suporte cópia'), 'BB importar como cópia é permitido de propósito');
+insert into public.projetos_3d(empresa_id, nome, arquivo_path, sha256, projeto_raiz_id) values ((select v from bb where k = 'ea'), 'Suporte v2', (select v from bb where k = 'ea') || '/projetos/a3.gcode.3mf', repeat('c', 64), (select v from bb where k = 'proj'));
+insert into public.projetos_3d(empresa_id, nome, arquivo_path, sha256, projeto_raiz_id, versao) values ((select v from bb where k = 'ea'), 'Suporte v3', (select v from bb where k = 'ea') || '/projetos/a4.gcode.3mf', repeat('d', 64), (select id from public.projetos_3d where nome = 'Suporte v2'), 99);
+select pg_temp.ok((select versao = 2 from public.projetos_3d where nome = 'Suporte v2') and (select versao = 3 and projeto_raiz_id = (select v from bb where k = 'proj') from public.projetos_3d where nome = 'Suporte v3'), 'BB versões numeradas no projeto raiz');
+select pg_temp.falha($$update public.projetos_3d set versao = 7 where nome = 'Suporte v2'$$, 'BB versão não é alterada', 'versão');
 select pg_temp.falha(format($$insert into public.projetos_3d(empresa_id, nome, origem, arquivo_path) values (%L, 'x', 'sincronizado', %L)$$, (select v from bb where k = 'ea'), (select v from bb where k = 'ea') || '/projetos/c.stl'), 'BB origem sincronizado só pela integração', 'integração');
 select pg_temp.falha(format($$insert into public.projetos_3d(empresa_id, nome, arquivo_path) values (%L, 'x', %L)$$, (select v from bb where k = 'ea'), (select v from bb where k = 'eb') || '/projetos/c.stl'), 'BB arquivo de outra loja bloqueado', 'check');
 select pg_temp.falha($$update public.projetos_3d set sha256 = repeat('b', 64) where nome = 'Suporte headset'$$, 'BB arquivo do projeto não muda', 'nova versão');
@@ -112,5 +118,33 @@ select pg_temp.ok((select count(*) = 0 from private.integracao_credenciais) and 
   and (select count(*) = 0 from public.impressora_telemetria), 'BB desconectar apaga credenciais, revoga agentes e limpa telemetria');
 set role anon;
 select pg_temp.falha($$select public.agente_reportar((select t from bt where k = 'tok'), '{"impressoras": []}')$$, 'BB agente revogado não envia', 'revogado');
+reset role;
+-- ===================== COMPLEMENTOS DO MVP =====================
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.impressoras set custo_aquisicao = 6000, valor_residual = 1000, vida_util_horas = 5000, custo_manutencao_hora = 0.1, custo_operacional_hora = 0.2 where id = (select v from bb where k = 'imp');
+select pg_temp.ok((select custo_hora = 1.3 from public.impressoras where id = (select v from bb where k = 'imp')), 'MVP custo/hora = (6000−1000)/5000 + 0,10 + 0,20 = 1,30');
+select pg_temp.falha($$update public.impressoras set valor_residual = 99999 where id = (select v from bb where k = 'imp')$$, 'MVP residual maior que a aquisição', 'residual');
+reset role; update public.empresa_config set falha_metodo = 'sucesso', taxa_sucesso_pct = 80 where empresa_id = (select v from bb where k = 'ea');
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.orcamento_itens set descricao = 'Placa 1  ' where orcamento_id = (select v from bb where k = 'om');
+select pg_temp.ok((select custo_falha = round((custo_material + custo_energia + custo_maquina) * 0.25, 4) and versao_calculo = 2 from public.orcamento_itens where orcamento_id = (select v from bb where k = 'om')), 'MVP reserva por taxa de sucesso 80% = +25% do custo de impressão');
+reset role; update public.empresa_config set falha_metodo = 'percentual', falha_pct = 10 where empresa_id = (select v from bb where k = 'ea');
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.orcamento_itens set descricao = 'Placa 1' where orcamento_id = (select v from bb where k = 'om');
+select pg_temp.ok((select custo_falha = round((custo_material + custo_energia + custo_maquina + custo_mao_obra + acabamento_custo + embalagem_custo) * 0.10, 4) from public.orcamento_itens where orcamento_id = (select v from bb where k = 'om')), 'MVP reserva percentual 10% (um método só)');
+reset role; update public.empresa_config set falha_metodo = 'nenhum' where empresa_id = (select v from bb where k = 'ea');
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select public.enviar_orcamento((select v from bb where k = 'om'));
+select public.registrar_compartilhamento((select v from bb where k = 'om'), 'whatsapp');
+select public.registrar_compartilhamento((select v from bb where k = 'om'), 'whatsapp');
+select pg_temp.ok((select count(*) = 1 from public.orcamento_revisoes where orcamento_id = (select v from bb where k = 'om') and evento = 'compartilhado_whatsapp'), 'MVP compartilhamento registrado sem repetir');
+select pg_temp.falha($$update public.orcamentos set visualizado_em = now() where id = (select v from bb where k = 'om')$$, 'MVP visualização não é forjada', 'link');
+reset role; insert into bt select 'tokorc', token_publico from public.orcamentos where id = (select v from bb where k = 'om');
+set role anon; reset request.jwt.claim.sub;
+select public.orcamento_visualizado((select t from bt where k = 'tokorc'));
+reset role;
+select pg_temp.ok((select visualizado_em is not null from public.orcamentos where id = (select v from bb where k = 'om')), 'MVP comprador abriu o link: visualizado');
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.falha($$select * from public.admin_uso_empresas()$$, 'MVP métricas só para a plataforma', 'plataforma');
 reset role;
 \echo BAMBU OK

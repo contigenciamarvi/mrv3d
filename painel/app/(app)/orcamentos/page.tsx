@@ -38,7 +38,7 @@ function Conteudo() {
   return (
     <>
       <PageHeader titulo="Orçamentos" sub="Calculadora de impressão 3D, aprovação por link e conversão em pedido"
-        acoes={pode && <Link href="/orcamentos/editar/"><Button><Plus className="h-4 w-4" /> Novo orçamento</Button></Link>} />
+        acoes={pode && <><Link href="/orcamentos/importar/"><Button variant="secondary">Importar Bambu Studio</Button></Link><Link href="/orcamentos/editar/"><Button><Plus className="h-4 w-4" /> Novo orçamento</Button></Link></>} />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Aguardando resposta" valor={(dados || []).filter((o) => o.status === "enviado" && !exp(o)).length} />
         <Kpi label="Aprovados (total)" valor={aprovados.length} />

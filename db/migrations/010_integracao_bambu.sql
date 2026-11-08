@@ -121,12 +121,16 @@ create table if not exists public.projetos_3d (
   tags text[] not null default '{}',
   produto_id uuid references public.produtos(id) on delete set null,
   arquivado boolean not null default false,
+  -- versões: todas apontam para o projeto raiz; cópia = mesmo arquivo importado de propósito como outro projeto
+  projeto_raiz_id uuid references public.projetos_3d(id) on delete set null,
+  versao integer not null default 1 check (versao between 1 and 9999),
+  copia_de uuid references public.projetos_3d(id) on delete set null,
   created_by uuid references auth.users(id) on delete set null default auth.uid(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint projeto_tem_fonte check (arquivo_path is not null or makerworld_url is not null)
 );
-create unique index if not exists projetos_sha_uq on public.projetos_3d(empresa_id, sha256) where sha256 is not null;
+create index if not exists projetos_sha_idx on public.projetos_3d(empresa_id, sha256) where sha256 is not null;
 create unique index if not exists projetos_mw_uq on public.projetos_3d(empresa_id, lower(makerworld_url)) where makerworld_url is not null;
 create index if not exists projetos_empresa_idx on public.projetos_3d(empresa_id, created_at desc);
 alter table public.projetos_3d enable row level security;
@@ -137,7 +141,7 @@ create policy projetos_alterar on public.projetos_3d for update using (private.p
   with check (private.pode(empresa_id, 'produtos_editar') or private.pode(empresa_id, 'orcamentos_criar') or private.pode(empresa_id, 'producao_gerenciar'));
 create policy projetos_excluir on public.projetos_3d for delete using (private.pode(empresa_id, 'produtos_editar') or private.pode(empresa_id, 'producao_gerenciar'));
 create trigger trg_projetos_upd before update on public.projetos_3d for each row execute function public.set_updated_at();
-create trigger trg_mesma_empresa before insert or update on public.projetos_3d for each row execute function private.checar_mesma_empresa('produto_id:produtos');
+create trigger trg_mesma_empresa before insert or update on public.projetos_3d for each row execute function private.checar_mesma_empresa('produto_id:produtos', 'projeto_raiz_id:projetos_3d', 'copia_de:projetos_3d');
 create trigger trg_audemp_projetos after insert or update or delete on public.projetos_3d for each row execute function private.auditar_empresa();
 
 -- licença decide o uso comercial; origem "sincronizado" só pela integração oficial
@@ -156,6 +160,22 @@ begin
       end if;
     end if;
     if new.origem = 'makerworld' and new.makerworld_url is null then raise exception 'Informe o link do modelo no MakerWorld'; end if;
+  end if;
+  -- mesmo arquivo na mesma empresa: só como cópia declarada (o usuário escolheu "importar como novo")
+  if tg_op = 'INSERT' and new.sha256 is not null then
+    perform pg_advisory_xact_lock(hashtext('projeto:' || new.empresa_id::text || new.sha256));
+    if new.copia_de is null and exists (select 1 from public.projetos_3d where empresa_id = new.empresa_id and sha256 = new.sha256) then
+      raise exception 'Este arquivo já está na biblioteca: reutilize o projeto existente ou importe como cópia';
+    end if;
+  end if;
+  -- nova versão: número sequencial dentro do projeto raiz
+  if tg_op = 'INSERT' and new.projeto_raiz_id is not null then
+    select coalesce(projeto_raiz_id, id) into new.projeto_raiz_id from public.projetos_3d where id = new.projeto_raiz_id;
+    perform pg_advisory_xact_lock(hashtext('versao:' || new.projeto_raiz_id::text));
+    new.versao := 1 + coalesce((select max(versao) from public.projetos_3d where id = new.projeto_raiz_id or projeto_raiz_id = new.projeto_raiz_id), 0);
+  elsif tg_op = 'INSERT' then new.versao := 1;
+  elsif new.versao is distinct from old.versao or new.projeto_raiz_id is distinct from old.projeto_raiz_id or new.copia_de is distinct from old.copia_de then
+    if not v_int then raise exception 'Versão do projeto não muda'; end if;
   end if;
   if new.origem = 'upload' and new.licenca is null then new.licenca := 'propria'; end if;
   new.uso_comercial := case
@@ -532,9 +552,17 @@ begin
   new.custo_maquina := round(new.tempo_h * new.custo_hora_maquina, 4);
   new.custo_mao_obra := round(new.mao_obra_h * new.mao_obra_hora, 4);
   -- Custo total (unitário)
+  -- custo de fabricação direto + reserva para falhas (um método só) + frete pago pela loja
+  new.custo_falha := round(case coalesce(c.falha_metodo, 'nenhum')
+      when 'percentual' then (new.custo_material + new.custo_energia + new.custo_maquina + new.custo_mao_obra + new.suportes_custo + new.acabamento_custo
+                              + new.pintura_custo + new.embalagem_custo + new.outros_custos) * coalesce(c.falha_pct, 0) / 100
+      -- custo médio esperado com tentativas independentes: custo por tentativa / probabilidade de sucesso (só a parte da impressão)
+      when 'sucesso' then (new.custo_material + new.custo_energia + new.custo_maquina) * (100 / greatest(coalesce(c.taxa_sucesso_pct, 100), 1) - 1)
+      else 0 end, 4);
+  new.versao_calculo := 2;
   new.custo_unitario := round(new.custo_material + new.custo_energia + new.custo_maquina + new.custo_mao_obra
                         + new.suportes_custo + new.acabamento_custo + new.pintura_custo + new.embalagem_custo
-                        + new.frete_assumido + new.outros_custos, 4);
+                        + new.outros_custos + new.custo_falha + new.frete_assumido, 4);
   if new.desconto_terceiros > new.custo_unitario then raise exception 'Desconto de terceiros maior que o custo do item'; end if;
   -- Preço = (custo − descontos de terceiros) / (1 − margem − impostos − taxas)
   -- o preço recupera também a parte dos custos fixos (que não entra no custo variável do pedido)
@@ -593,3 +621,86 @@ begin
 end; $$;
 drop trigger if exists trg_item_projeto on public.orcamento_itens;
 create trigger trg_item_projeto after insert or update of projeto_id on public.orcamento_itens for each row execute function private.item_vincular_projeto();
+
+
+-- =====================================================================
+-- Complementos do MVP: custo da máquina, reserva para falhas, visualização e compartilhamento
+-- =====================================================================
+-- custo/hora técnico = (aquisição − residual) / vida útil + manutenção + custo operacional adicional (energia é calculada à parte)
+alter table public.impressoras
+  add column if not exists valor_residual numeric(12,2) not null default 0 check (valor_residual >= 0),
+  add column if not exists custo_operacional_hora numeric(10,4) not null default 0 check (custo_operacional_hora >= 0);
+do $$ begin
+  alter table public.impressoras add constraint residual_menor_aquisicao check (valor_residual <= custo_aquisicao);
+exception when duplicate_object then null; end $$;
+alter table public.impressoras drop column if exists custo_hora;
+alter table public.impressoras add column custo_hora numeric(10,4)
+  generated always as (round((custo_aquisicao - valor_residual) / vida_util_horas + custo_manutencao_hora + custo_operacional_hora, 4)) stored;
+
+-- reserva para falhas: percentual sobre o custo de fabricação OU custo esperado pela taxa de sucesso (nunca os dois)
+alter table public.empresa_config
+  add column if not exists falha_metodo text not null default 'nenhum' check (falha_metodo in ('nenhum','percentual','sucesso')),
+  add column if not exists falha_pct numeric(5,2) not null default 0 check (falha_pct >= 0 and falha_pct <= 100),
+  add column if not exists taxa_sucesso_pct numeric(5,2) not null default 100 check (taxa_sucesso_pct > 0 and taxa_sucesso_pct <= 100);
+alter table public.orcamento_itens
+  add column if not exists custo_falha numeric(12,4) not null default 0,
+  add column if not exists versao_calculo integer not null default 2;
+
+-- o comprador abriu o link do orçamento
+alter table public.orcamentos add column if not exists visualizado_em timestamptz;
+create or replace function public.orcamento_visualizado(p_token text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare o public.orcamentos;
+begin
+  if p_token is null or length(p_token) < 32 then return; end if;
+  select * into o from public.orcamentos where token_publico = p_token for update;
+  if o.id is null or o.status <> 'enviado' or o.visualizado_em is not null then return; end if;
+  perform set_config('app.orcamento_rpc', '1', true);
+  update public.orcamentos set visualizado_em = now() where id = o.id;
+  perform set_config('app.orcamento_rpc', '0', true);
+  insert into public.orcamento_revisoes(empresa_id, orcamento_id, revisao, evento, dados) values (o.empresa_id, o.id, o.revisao, 'visualizado', '{}'::jsonb);
+end; $$;
+-- quem não é da plataforma não marca visualização direto
+create or replace function private.proteger_visualizado() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.visualizado_em is distinct from old.visualizado_em and coalesce(current_setting('app.orcamento_rpc', true), '') <> '1' and (select auth.uid()) is not null then
+    raise exception 'A visualização é registrada pelo link do comprador';
+  end if;
+  return new;
+end; $$;
+drop trigger if exists trg_orc_visualizado on public.orcamentos;
+create trigger trg_orc_visualizado before update on public.orcamentos for each row execute function private.proteger_visualizado();
+
+-- intenção de compartilhar (não significa que a mensagem foi entregue)
+create or replace function public.registrar_compartilhamento(p_orcamento uuid, p_canal text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare o public.orcamentos;
+begin
+  select * into o from public.orcamentos where id = p_orcamento;
+  if o.id is null or not private.pode(o.empresa_id, 'orcamentos_criar') then raise exception 'Orçamento não encontrado'; end if;
+  if p_canal not in ('whatsapp','link','pdf') then raise exception 'Canal inválido'; end if;
+  if exists (select 1 from public.orcamento_revisoes where orcamento_id = o.id and evento = 'compartilhado_' || p_canal and created_at > now() - interval '1 minute') then return; end if;
+  insert into public.orcamento_revisoes(empresa_id, orcamento_id, revisao, evento, dados) values (o.empresa_id, o.id, o.revisao, 'compartilhado_' || p_canal, jsonb_build_object('total', o.total));
+end; $$;
+
+-- métricas agregadas para o Super Admin (sem dados de clientes, projetos ou finanças das empresas)
+create or replace function public.admin_uso_empresas()
+returns table(empresa_id uuid, nome text, status public.status_empresa, usuarios bigint, impressoras bigint, projetos bigint, orcamentos_30d bigint, armazenamento_mb numeric, erros_integracao_7d bigint)
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not private.is_admin_plataforma() then raise exception 'Acesso restrito à plataforma'; end if;
+  return query
+  select e.id, e.nome, e.status,
+    (select count(*) from public.membros m where m.empresa_id = e.id and m.ativo),
+    (select count(*) from public.impressoras i where i.empresa_id = e.id and i.status <> 'inativa'),
+    (select count(*) from public.projetos_3d p where p.empresa_id = e.id),
+    (select count(*) from public.orcamentos o where o.empresa_id = e.id and o.created_at > now() - interval '30 days'),
+    round(coalesce((select sum((s.metadata->>'size')::numeric) from storage.objects s where s.bucket_id = 'empresa' and s.name like e.id::text || '/%'), 0) / 1048576, 1),
+    (select count(*) from public.integracao_eventos v where v.empresa_id = e.id and v.tipo = 'erro' and v.created_at > now() - interval '7 days')
+  from public.empresas e order by e.nome;
+end; $$;
+
+revoke all on function public.orcamento_visualizado(text), public.registrar_compartilhamento(uuid, text), public.admin_uso_empresas() from public, anon;
+grant execute on function public.orcamento_visualizado(text) to anon, authenticated;
+grant execute on function public.registrar_compartilhamento(uuid, text), public.admin_uso_empresas() to authenticated;

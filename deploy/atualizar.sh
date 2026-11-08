@@ -37,6 +37,27 @@ done
 echo "notify pgrst, 'reload schema';" | $DB
 echo "banco em dia"
 
+# limite de envio por arquivo: 200 MB (armazenamento do Supabase + nginx). Só mexe se ainda estiver diferente.
+LIM=209715200
+COMPOSE=/opt/supabase/docker-compose.yml
+if [ -f "$COMPOSE" ] && grep -Eq 'FILE_SIZE_LIMIT: *"?[0-9]+' "$COMPOSE" && ! grep -Eq "FILE_SIZE_LIMIT: *\"?$LIM" "$COMPOSE"; then
+  cp "$COMPOSE" "$COMPOSE.antes-limite"
+  sed -i -E "s/(FILE_SIZE_LIMIT: *\"?)[0-9]+/\1$LIM/" "$COMPOSE"
+  ( cd /opt/supabase && docker compose up -d storage >/dev/null 2>&1 ) && echo "armazenamento: limite por arquivo 200 MB" \
+    || { cp "$COMPOSE.antes-limite" "$COMPOSE"; echo "AVISO: não consegui reiniciar o armazenamento com o limite novo (mantido o anterior)"; }
+fi
+grep -E 'FILE_SIZE_LIMIT' "$COMPOSE" 2>/dev/null | head -1 | sed 's/^ */armazenamento: /' || true
+NGX=/etc/nginx/conf.d/mrv3d-upload.conf
+if [ ! -f "$NGX" ]; then
+  echo "client_max_body_size 210m;" > "$NGX"
+  for f in $(grep -lE "server_name[^;]*api\.$DOM" /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf 2>/dev/null); do
+    cp "$f" "/root/$(basename "$f").antes-limite"
+    sed -i -E 's/client_max_body_size[^;]*;/client_max_body_size 210m;/' "$f"
+  done
+  nginx -t -q 2>/dev/null && echo "nginx: envio até 210 MB" \
+    || { rm -f "$NGX"; for b in /root/*.antes-limite; do [ -f "$b" ] || continue; n=$(basename "$b" .antes-limite); for d in /etc/nginx/sites-enabled /etc/nginx/conf.d; do [ -f "$d/$n" ] && cp "$b" "$d/$n"; done; done; echo "AVISO: nginx recusou o limite novo (mantido o anterior)"; }
+fi
+
 # soma de verificação do agente local (o usuário confere o download)
 ( cd "$DIR/painel/public/agente" && sha256sum mrv3d_agente.py > mrv3d_agente.py.sha256 ) 2>/dev/null || true
 

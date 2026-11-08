@@ -275,7 +275,7 @@ export function Importador({ raiz, onPronto }: { raiz?: Projeto | null; onPronto
         onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); processar(e.dataTransfer.files[0]); }}>
         {proc ? <Loader2 className="h-8 w-8 animate-spin" /> : <Upload className="h-8 w-8" />}
         <span className="text-base"><b className="text-brand-700">{proc ? "Lendo o arquivo…" : raiz ? `Nova versão de "${raiz.nome}"` : "Arraste o arquivo"}</b>{!proc && " ou clique"}</span>
-        <span className="text-xs">.gcode.3mf · .3mf · .gcode · .stl · .obj · .step — até 200 MB (o arquivo salvo tem limite de 50 MB). Lido no seu navegador; nada é executado.</span>
+        <span className="text-xs">.gcode.3mf · .3mf · .gcode · .stl · .obj · .step — até 200 MB. Lido no seu navegador; nada é executado.</span>
         <input type="file" accept=".3mf,.gcode,.stl,.obj,.step,.stp" className="hidden" disabled={proc || !pode} onChange={(e) => { processar(e.target.files?.[0]); e.target.value = ""; }} />
       </label>}
       {!pode && <Aviso tom="amarelo">Seu perfil não importa projetos.</Aviso>}
@@ -285,7 +285,7 @@ export function Importador({ raiz, onPronto }: { raiz?: Projeto | null; onPronto
           <div className="flex h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">{mini ? <img src={mini} alt="" className="h-full w-full object-contain" /> : <Layers className="h-8 w-8 text-slate-300" />}</div>
           <div className="min-w-60 flex-1 space-y-3">
             <div className="text-xs text-slate-500">{imp.arquivo.name} · {num(imp.arquivo.size / 1048576, 1)} MB · tipo detectado: <b>{imp.tipo}</b>{imp.fatiador ? ` · ${imp.fatiador}` : ""}</div>
-            {imp.arquivo.size > 50 * 1048576 && <Aviso tom="vermelho">O arquivo passa de 50 MB e não pode ser guardado. Exporte só as placas necessárias ou use um .gcode.3mf menor.</Aviso>}
+            {imp.arquivo.size > 200 * 1048576 && <Aviso tom="vermelho">O arquivo passa de 200 MB e não pode ser guardado. Exporte só as placas necessárias ou use um .gcode.3mf menor.</Aviso>}
             <Grid>
               <Field label="Nome do projeto"><Input value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
               <Field label="Licença"><Select value={licenca} onChange={(e) => setLicenca(e.target.value)}>{Object.entries(LICENCAS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
@@ -304,11 +304,11 @@ export function Importador({ raiz, onPronto }: { raiz?: Projeto | null; onPronto
             {usoComercial(licenca) === "proibido" && <Aviso tom="vermelho">Licença sem uso comercial: o projeto fica na biblioteca, mas não poderá ir para orçamento ou produção até você registrar uma licença comercial.</Aviso>}
             {dup && !raiz && <Aviso tom="amarelo">Este mesmo arquivo já está na biblioteca como <b>{dup.nome}</b>. Escolha: reutilizar o existente, importar como cópia separada ou enviar como nova versão dele.</Aviso>}
             <div className="flex flex-wrap gap-2">
-              {raiz ? <Button loading={salvando} disabled={imp.arquivo.size > 50 * 1048576 || dup?.id === raiz.id} onClick={() => salvar("versao")}><GitBranch className="h-4 w-4" /> Salvar como nova versão</Button>
+              {raiz ? <Button loading={salvando} disabled={imp.arquivo.size > 200 * 1048576 || dup?.id === raiz.id} onClick={() => salvar("versao")}><GitBranch className="h-4 w-4" /> Salvar como nova versão</Button>
                 : dup ? <>
                   <Button onClick={() => onPronto ? onPronto(dup.id) : router.push(`/projetos/?id=${dup.id}`)}>Reutilizar o existente</Button>
-                  <Button variant="secondary" loading={salvando} disabled={imp.arquivo.size > 50 * 1048576} onClick={() => salvar("copia")}><Copy className="h-4 w-4" /> Importar como cópia</Button>
-                </> : <Button loading={salvando} disabled={imp.arquivo.size > 50 * 1048576} onClick={() => salvar("novo")}>Salvar na biblioteca</Button>}
+                  <Button variant="secondary" loading={salvando} disabled={imp.arquivo.size > 200 * 1048576} onClick={() => salvar("copia")}><Copy className="h-4 w-4" /> Importar como cópia</Button>
+                </> : <Button loading={salvando} disabled={imp.arquivo.size > 200 * 1048576} onClick={() => salvar("novo")}>Salvar na biblioteca</Button>}
               {app.pode("orcamentos_criar") && !raiz && <Link href="/orcamentos/importar/"><Button variant="ghost">Usar direto no orçamento</Button></Link>}
               <Button variant="ghost" onClick={() => { setImp(null); setDup(null); }}>Trocar arquivo</Button>
             </div>

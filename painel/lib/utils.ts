@@ -126,3 +126,29 @@ export function etapaPedido(p: { status: string; status_pagamento: string; statu
   if (p.status_pagamento === "aguardando") return ["Aguardando pagamento", "pendente"];
   return ["Aguardando produção", "aprovado"];
 }
+
+// ---------- Fase 4 ----------
+export const STATUS_COMPRA: Record<string, string> = {
+  rascunho: "Rascunho", solicitado: "Aguardando aprovação", aprovado: "Aprovada", enviado: "Pedido ao fornecedor", parcial: "Recebida em parte", recebido: "Recebida", cancelado: "Cancelada",
+};
+export const SERVICOS_MANUTENCAO: Record<string, string> = {
+  troca_bico: "Troca de bico", troca_correia: "Troca de correia", lubrificacao: "Lubrificação", calibracao: "Calibração", limpeza: "Limpeza",
+  substituicao_componente: "Substituição de componente", firmware: "Atualização de firmware", outro: "Outro",
+};
+export const STATUS_MANUTENCAO: Record<string, string> = { agendada: "Agendada", em_andamento: "Em andamento", concluida: "Concluída", cancelada: "Cancelada" };
+export const STATUS_ENVIO: Record<string, string> = {
+  separacao: "Separação", conferencia: "Conferência", embalado: "Embalado", aguardando_coleta: "Aguardando coleta", enviado: "Enviado",
+  em_transito: "Em trânsito", entregue: "Entregue", retirado: "Retirado", devolvido: "Devolvido", cancelado: "Cancelado",
+};
+export const MODALIDADES_ENVIO: Record<string, string> = {
+  retirada: "Retirada no local", entrega_propria: "Entrega própria", correios: "Correios", transportadora: "Transportadora", melhor_envio: "Melhor Envio",
+};
+export const STATUS_PORTAL: Record<string, string> = { nova: "Nova", em_analise: "Em análise", orcada: "Orçamento criado", recusada: "Recusada", cancelada: "Cancelada" };
+
+/** Baixa um CSV (separador ;, com BOM para o Excel abrir acentos) */
+export function baixarCsv(nome: string, linhas: (string | number | null | undefined)[][]) {
+  const t = "﻿" + linhas.map((l) => l.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([t], { type: "text/csv" })); a.download = `${nome}.csv`; a.click();
+}
+/** número em formato brasileiro para CSV (vírgula decimal) */
+export const csvNum = (v: unknown) => (v == null || v === "" ? "" : String(v).replace(".", ","));

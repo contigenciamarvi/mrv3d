@@ -283,7 +283,7 @@ function Detalhe({ id, clis, onClose, onMudou }: { id: string; clis: { id: strin
           </Grid>
           <datalist id="transp">{["Retirada no local", "Entrega própria", "Correios", "Jadlog", "Loggi", "Motoboy"].map((t) => <option key={t} value={t} />)}</datalist>
           {p.entregue_em && <p className="text-sm text-slate-500">Entregue em {dataHora(p.entregue_em)}.</p>}
-          <p className="text-xs text-slate-500">Separação, conferência, etiquetas e integração com Melhor Envio chegam com o módulo de Expedição (Fase 4).</p>
+          <p className="text-xs text-slate-500">Para separação, conferência, medidas, frete e etiqueta, use <Link href="/expedicao/" className="text-brand-600 underline">Expedição e Entregas</Link>. Depois que o pedido entra lá, a entrega é atualizada por lá.</p>
           <Button type="submit">Salvar entrega</Button>
         </fieldset>
       </form>}

@@ -11,6 +11,7 @@ import { num, dataHora, erroMsg, numOuNull, cn } from "@/lib/utils";
 import { importarArquivo, type Importado } from "@/lib/importar3d";
 import { salvarNaBiblioteca, LICENCAS, ORIGENS, licencaDoArquivo, usoComercial, type Projeto } from "@/lib/biblioteca";
 import { Button, Card, CardTitle, Field, Input, Select, Textarea, Grid, Modal, Table, Td, Loading, ErrorBox, Empty, Badge, Aviso, Confirmar } from "@/components/ui";
+import { useArquivoDoZip } from "@/components/escolha-zip";
 
 const horas = (min: number | null) => (min ? `${Math.floor(min / 60)}h ${Math.round(min % 60)}min` : "—");
 const tomUso = (u: string) => (u === "permitido" ? "verde" : u === "proibido" ? "vermelho" : "amarelo") as "verde" | "vermelho" | "amarelo";
@@ -216,10 +217,14 @@ export function Importador({ raiz, onPronto }: { raiz?: Projeto | null; onPronto
   const [salvando, setSalvando] = useState(false);
   const pode = app.podeEscrever && (app.pode("produtos_editar") || app.pode("orcamentos_criar") || app.pode("producao_gerenciar"));
 
+  const zip = useArquivoDoZip();
   const processar = async (f?: File) => {
     if (!f) return;
     setFalha(""); setProc(true); setImp(null); setDup(null);
     try {
+      const escolhido = await zip.abrir(f);
+      if (!escolhido) return;
+      f = escolhido;
       const r = await importarArquivo(f);
       setImp(r); setNome(raiz?.nome || r.nome || f.name); setLicenca(licencaDoArquivo(r.licenca) || "propria");
       setManual({ tempo: "", peso: "" });
@@ -271,12 +276,13 @@ export function Importador({ raiz, onPronto }: { raiz?: Projeto | null; onPronto
   const mini = useMemo(() => imp?.miniatura ? URL.createObjectURL(new Blob([imp.miniatura as BlobPart], { type: "image/png" })) : null, [imp]);
   return (
     <div className="space-y-4">
+      {zip.modal}
       {!imp && <label className={cn("flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/50", (proc || !pode) && "pointer-events-none opacity-60")}
         onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); processar(e.dataTransfer.files[0]); }}>
         {proc ? <Loader2 className="h-8 w-8 animate-spin" /> : <Upload className="h-8 w-8" />}
         <span className="text-base"><b className="text-brand-700">{proc ? "Lendo o arquivo…" : raiz ? `Nova versão de "${raiz.nome}"` : "Arraste o arquivo"}</b>{!proc && " ou clique"}</span>
-        <span className="text-xs">.gcode.3mf · .3mf · .gcode · .stl · .obj · .step — até 200 MB. Lido no seu navegador; nada é executado.</span>
-        <input type="file" accept=".3mf,.gcode,.stl,.obj,.step,.stp" className="hidden" disabled={proc || !pode} onChange={(e) => { processar(e.target.files?.[0]); e.target.value = ""; }} />
+        <span className="text-xs">.gcode.3mf · .3mf · .gcode · .stl · .obj · .step · .zip — até 200 MB. Lido no seu navegador; nada é executado.</span>
+        <input type="file" accept=".3mf,.gcode,.stl,.obj,.step,.stp,.zip" className="hidden" disabled={proc || !pode} onChange={(e) => { processar(e.target.files?.[0]); e.target.value = ""; }} />
       </label>}
       {!pode && <Aviso tom="amarelo">Seu perfil não importa projetos.</Aviso>}
       {falha && <ErrorBox erro={falha} />}
@@ -326,6 +332,7 @@ export function MakerWorld() {
   const [f, setF] = useState({ url: "", nome: "", autor: "", licenca: "sdfl", descricao: "" });
   const [arq, setArq] = useState<Importado | null>(null);
   const [lendo, setLendo] = useState(false);
+  const zipMw = useArquivoDoZip();
   const [salvando, setSalvando] = useState(false);
   const [lista, setLista] = useState(0);
   const urlOk = /^https:\/\/(www\.)?makerworld\.com(\.cn)?\/.+/i.test(f.url.trim());
@@ -347,6 +354,7 @@ export function MakerWorld() {
   };
   return (
     <div className="space-y-6">
+      {zipMw.modal}
       <Card><CardTitle>Guardar referência de modelo público</CardTitle>
         <Aviso>O MakerWorld não oferece integração oficial para terceiros, então nada é baixado automaticamente. Cole o link, confira a licença na página do modelo e, se quiser, anexe o arquivo que você baixou por lá. A licença padrão do MakerWorld (Standard Digital File License) permite só uso pessoal: para vender impressões, é preciso licença comercial do autor.</Aviso>
         <form className="mt-4 space-y-3" onSubmit={salvar}>
@@ -359,7 +367,7 @@ export function MakerWorld() {
             <Field label="Licença do modelo (como está na página)"><Select value={f.licenca} onChange={(e) => setF({ ...f, licenca: e.target.value })}>{Object.entries(LICENCAS).filter(([k]) => k !== "propria").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
             <Field label="Observações"><Textarea value={f.descricao} onChange={(e) => setF({ ...f, descricao: e.target.value })} /></Field>
             <label className="flex cursor-pointer items-center gap-2 text-sm text-brand-600">{lendo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} {arq ? `Arquivo: ${arq.arquivo.name}` : "Anexar o arquivo baixado (opcional)"}
-              <input type="file" accept=".3mf,.stl,.gcode,.obj,.step,.stp" className="hidden" onChange={async (e) => { const a = e.target.files?.[0]; if (!a) return; setLendo(true); try { setArq(await importarArquivo(a)); } catch (x) { erro(x); } finally { setLendo(false); } }} /></label>
+              <input type="file" accept=".3mf,.gcode,.stl,.obj,.step,.stp,.zip" className="hidden" onChange={async (e) => { const a = e.target.files?.[0]; e.target.value = ""; if (!a) return; setLendo(true); try { const x = await zipMw.abrir(a); if (x) setArq(await importarArquivo(x)); } catch (x) { erro(x); } finally { setLendo(false); } }} /></label>
             <Button type="submit" loading={salvando} disabled={!urlOk}>Salvar referência</Button>
           </fieldset>
         </form>

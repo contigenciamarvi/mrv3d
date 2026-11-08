@@ -266,8 +266,8 @@ function Arquivos({ produtoId, pode }: { produtoId: string; pode: boolean }) {
   return (
     <div className="space-y-3">
       {pode && <label className={cn("flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 p-6 text-sm text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800", enviando && "opacity-50")}>
-        <Upload className="h-4 w-4" /> {enviando ? "Enviando…" : "Enviar fotos, STL, 3MF, STEP, G-code ou PDF (até 50 MB)"}
-        <input type="file" multiple disabled={enviando} accept=".stl,.3mf,.obj,.step,.stp,.gcode,.png,.jpg,.jpeg,.webp,.pdf" className="hidden" onChange={(e) => { enviar(e.target.files); e.target.value = ""; }} />
+        <Upload className="h-4 w-4" /> {enviando ? "Enviando…" : "Enviar fotos, STL, 3MF, STEP, G-code, .zip ou PDF (até 50 MB)"}
+        <input type="file" multiple disabled={enviando} accept=".stl,.3mf,.obj,.step,.stp,.gcode,.zip,.png,.jpg,.jpeg,.webp,.pdf" className="hidden" onChange={(e) => { enviar(e.target.files); e.target.value = ""; }} />
       </label>}
       <p className="text-xs text-slate-500">Os arquivos ficam privados. Os links de download valem por 10 minutos.</p>
       {!dados?.length ? <Empty texto="Nenhum arquivo" /> : (

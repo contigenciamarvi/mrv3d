@@ -10,6 +10,7 @@ import { toast, erro } from "@/lib/toast";
 import { brl, num, data, dataHora, hojeISO, numOuNull, linkWhats, preencher, STATUS_ORCAMENTO, TECNOLOGIAS, cn } from "@/lib/utils";
 import { analisarModelo, densidadeDe, type Analise } from "@/lib/modelo3d";
 import { Button, Card, CardTitle, Field, Input, Select, Textarea, Grid, Modal, Table, Td, Loading, Badge, tomStatus, Aviso, Confirmar } from "@/components/ui";
+import { ehZipComum, arquivos3dDoZip } from "@/lib/zip3d";
 
 type Mat = { id: string; nome: string; material: string | null; cor: string | null; unidade: string; custo_medio: number; peso_liquido_g: number | null; margem_pct: number | null };
 type Imp = { id: string; nome: string; tecnologia: string; potencia_w: number; custo_hora: number };
@@ -337,7 +338,16 @@ function ItemCard({ it, idx, base, pode, verCusto, aberto, congelado, salvo, c, 
     if (!arq) return; setLendo(true);
     try {
       const ext = arq.name.split(".").pop()?.toLowerCase();
-      if (["stl", "3mf"].includes(ext || "")) { const a = await analisarModelo(arq); setAnalise(a); onChange({ volume_cm3: a.volume_cm3.toFixed(2).replace(".", ",") }); }
+      if (await ehZipComum(arq)) {
+        // .zip com as peças: anexa o .zip inteiro e soma o volume dos STL/3MF de dentro
+        const pecas = (await arquivos3dDoZip(arq)).filter((x) => /\.(stl|3mf)$/i.test(x.name));
+        let vol = 0, tri = 0, lidas = 0;
+        for (const p of pecas) { try { const a = await analisarModelo(p); vol += a.volume_cm3; tri += a.triangulos; lidas++; } catch { /* peça ilegível: ignora */ } }
+        if (lidas) {
+          setAnalise({ volume_cm3: vol, triangulos: tri, dimensoes_mm: [0, 0, 0], formato: "zip", aviso: `${lidas} peça(s) do .zip somadas${lidas < pecas.length ? ` (${pecas.length - lidas} não lida(s))` : ""}` });
+          onChange({ volume_cm3: vol.toFixed(2).replace(".", ",") });
+        }
+      } else if (["stl", "3mf"].includes(ext || "")) { const a = await analisarModelo(arq); setAnalise(a); onChange({ volume_cm3: a.volume_cm3.toFixed(2).replace(".", ",") }); }
       const path = await enviarArquivo(app.empresa.id, "orcamentos", arq);
       onChange({ arquivo_path: path, arquivo_nome: arq.name, descricao: it.descricao || arq.name.replace(/\.[^.]+$/, "") });
       toast("Arquivo anexado ao item");
@@ -371,13 +381,13 @@ function ItemCard({ it, idx, base, pode, verCusto, aberto, congelado, salvo, c, 
             </Grid>
             <div className="rounded-lg border border-dashed border-slate-300 p-3 dark:border-slate-700">
               <label className={cn("flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300", lendo && "opacity-50")}>
-                <Upload className="h-4 w-4" /> {lendo ? "Lendo arquivo…" : it.arquivo_nome ? `Arquivo: ${it.arquivo_nome} (trocar)` : "Anexar STL, 3MF, OBJ ou STEP"}
-                <input type="file" className="hidden" disabled={lendo} accept=".stl,.3mf,.obj,.step,.stp" onChange={(e) => { ler(e.target.files?.[0]); e.target.value = ""; }} />
+                <Upload className="h-4 w-4" /> {lendo ? "Lendo arquivo…" : it.arquivo_nome ? `Arquivo: ${it.arquivo_nome} (trocar)` : "Anexar STL, 3MF, OBJ, STEP ou .zip"}
+                <input type="file" className="hidden" disabled={lendo} accept=".stl,.3mf,.obj,.step,.stp,.zip" onChange={(e) => { ler(e.target.files?.[0]); e.target.value = ""; }} />
               </label>
               {analise && (
                 <div className="mt-3 space-y-2 text-sm">
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-slate-600 dark:text-slate-300"><span><Box className="mr-1 inline h-3.5 w-3.5" />{analise.formato}</span><span>Volume geométrico: <b>{num(analise.volume_cm3, 2)} cm³</b></span>
-                    <span>Dimensões: {analise.dimensoes_mm.join(" × ")} mm</span><span>{num(analise.triangulos, 0)} triângulos</span></div>
+                    {analise.formato !== "zip" && <span>Dimensões: {analise.dimensoes_mm.join(" × ")} mm</span>}<span>{num(analise.triangulos, 0)} triângulos</span></div>
                   <div className="flex flex-wrap items-end gap-2">
                     <Field label="Preenchimento (%)"><Input className="w-24" inputMode="numeric" value={preenchimento} onChange={(e) => setPreenchimento(e.target.value)} /></Field>
                     <div className="pb-2">≈ <b>{num(pesoEstimado, 0)} g</b> (estimativa)</div>

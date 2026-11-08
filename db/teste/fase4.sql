@@ -196,6 +196,7 @@ select pg_temp.ok((select count(*) = 1 from storage.objects where name like '%/p
 select pg_temp.falha($$select public.portal_publico('nao-existe')$$, 'F4 loja inexistente', 'não encontrada');
 insert into f4 values ('pasta', gen_random_uuid());
 insert into storage.objects(bucket_id, name, metadata) values ('empresa', (select v from f4 where k = 'ea') || '/portal/' || (select v from f4 where k = 'pasta') || '/peca.stl', '{"size": 5000}');
+insert into storage.objects(bucket_id, name, metadata) values ('empresa', (select v from f4 where k = 'ea') || '/portal/' || (select v from f4 where k = 'pasta') || '/pecas.zip', '{"size": 5000}');
 select pg_temp.falha(format($$insert into storage.objects(bucket_id, name) values ('empresa', %L)$$, (select v from f4 where k = 'ea') || '/produtos/hack.stl'), 'F4 visitante não grava fora da pasta do portal');
 select pg_temp.falha(format($$insert into storage.objects(bucket_id, name) values ('empresa', %L)$$, (select v from f4 where k = 'ea') || '/portal/' || gen_random_uuid() || '/virus.exe'), 'F4 visitante só envia modelo 3D');
 select pg_temp.falha(format($$insert into storage.objects(bucket_id, name) values ('empresa', %L)$$, (select v from f4 where k = 'ea') || '/portal/x/y/z.stl'), 'F4 caminho do portal validado');

@@ -9,7 +9,7 @@ type Loja = { empresa_id: string; nome: string; cidade: string | null; uf: strin
   aceitar_arquivos: boolean; mostrar_precos: boolean; mensagem_sucesso: string | null; logo_path: string | null; cores: string[];
   materiais: { id: string; nome: string; cor: string | null; material: string | null }[];
   produtos: { id: string; nome: string; descricao: string | null; categoria: string | null; cor: string | null; preco: number | null; foto_path: string | null; personalizavel: boolean; pronta_entrega: boolean }[] };
-const EXT = ["stl", "3mf", "obj", "step", "stp"];
+const EXT = ["stl", "3mf", "obj", "step", "stp", "zip"];
 const MAX = 50 * 1048576;
 
 /** Página pública da loja (portal do comprador): /loja/?s=endereco */
@@ -41,7 +41,7 @@ export default function LojaPublica() {
     if (!lista) return;
     const novos = Array.from(lista).filter((a) => {
       const ext = a.name.split(".").pop()?.toLowerCase() || "";
-      if (!EXT.includes(ext)) { setErroForm(`"${a.name}": envie STL, 3MF, OBJ ou STEP`); return false; }
+      if (!EXT.includes(ext)) { setErroForm(`"${a.name}": envie STL, 3MF, OBJ, STEP ou .zip`); return false; }
       if (a.size > MAX) { setErroForm(`"${a.name}" passa de 50 MB`); return false; }
       return true;
     });
@@ -115,8 +115,8 @@ export default function LojaPublica() {
             {l.aceitar_arquivos && !f.produto && <div>
               <label className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 hover:bg-slate-50"
                 onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); escolherArquivos(e.dataTransfer.files); }}>
-                <Upload className="h-6 w-6" /> <span><b className="text-brand-700">Clique</b> ou arraste seus arquivos</span><span className="text-xs">STL, 3MF, OBJ ou STEP · até 5 arquivos de 50 MB</span>
-                <input type="file" multiple accept=".stl,.3mf,.obj,.step,.stp" className="hidden" onChange={(e) => { escolherArquivos(e.target.files); e.target.value = ""; }} />
+                <Upload className="h-6 w-6" /> <span><b className="text-brand-700">Clique</b> ou arraste seus arquivos</span><span className="text-xs">STL, 3MF, OBJ, STEP ou .zip · até 5 arquivos de 50 MB</span>
+                <input type="file" multiple accept=".stl,.3mf,.obj,.step,.stp,.zip" className="hidden" onChange={(e) => { escolherArquivos(e.target.files); e.target.value = ""; }} />
               </label>
               {arqs.length > 0 && <ul className="mt-2 space-y-1 text-sm">{arqs.map((a, i) => <li key={i} className="flex items-center justify-between rounded bg-slate-50 px-2 py-1">
                 <span className="truncate">{a.name} <span className="text-xs text-slate-500">({(a.size / 1048576).toFixed(1)} MB)</span></span>

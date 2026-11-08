@@ -12,6 +12,7 @@ import { importarArquivo, sugerirMaterial, precoKg, type Importado, type MatCada
 import { salvarNaBiblioteca, licencaDoArquivo, usoComercial, LICENCAS, type Projeto } from "@/lib/biblioteca";
 import { calcularItem, custoMaterial, depreciacaoHora, type Config as CfgCalc } from "@/lib/precificacao";
 import { Button, Card, CardTitle, Field, Input, Select, Grid, Modal, Table, Td, Loading, ErrorBox, Badge, Aviso, Checkbox } from "@/components/ui";
+import { useArquivoDoZip } from "@/components/escolha-zip";
 
 type Imp = { id: string; nome: string; potencia_w: number; custo_hora: number; custo_aquisicao: number; vida_util_horas: number; custo_manutencao_hora: number; valor_residual: number; custo_operacional_hora: number; modelo: string | null; fabricante: string | null; status: string };
 type Cli = { id: string; nome: string; margem_pct: number | null };
@@ -68,11 +69,14 @@ function Conteudo() {
     setImpressora((alvo && imps.find((i) => `${i.fabricante || ""} ${i.modelo || ""} ${i.nome}`.toLowerCase().includes(alvo))?.id) || imps[0]?.id || "");
   };
 
+  const zip = useArquivoDoZip();
   const processar = async (arq: File | undefined) => {
     if (!arq) return;
     setFalha(""); setProcessando(true); setFonte(null);
     try {
-      const imp = await importarArquivo(arq);
+      const escolhido = await zip.abrir(arq);
+      if (!escolhido) return;
+      const imp = await importarArquivo(escolhido);
       setLicenca(licencaDoArquivo(imp.licenca) ?? "propria");
       setFonte({ tipo: "arquivo", imp, miniatura: imp.miniatura ? URL.createObjectURL(new Blob([imp.miniatura as BlobPart], { type: "image/png" })) : null });
       preparar(imp);
@@ -189,6 +193,7 @@ function Conteudo() {
   const ext = fonte?.tipo === "arquivo" ? fonte.imp : null;
   return (
     <>
+      {zip.modal}
       <PageHeader titulo="Importar do Bambu Studio" sub="Envie o arquivo fatiado (.gcode.3mf) e o sistema calcula custo, margem e preço de venda"
         acoes={<Link href="/integracoes/bambu/?aba=projetos"><Button variant="secondary"><Library className="h-4 w-4" /> Biblioteca de projetos</Button></Link>} />
       {!fonte && <Card>
@@ -196,8 +201,8 @@ function Conteudo() {
           onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); processar(e.dataTransfer.files[0]); }}>
           {processando ? <Loader2 className="h-8 w-8 animate-spin" /> : <Upload className="h-8 w-8" />}
           <span className="text-base"><b className="text-brand-700">{processando ? "Lendo o arquivo…" : "Arraste o arquivo aqui"}</b>{!processando && " ou clique para escolher"}</span>
-          <span className="text-xs">.gcode.3mf (recomendado) · .3mf · .gcode · .stl — até 200 MB. O arquivo é lido no seu navegador; só vai para o servidor quando você salvar.</span>
-          <input type="file" accept=".3mf,.gcode,.stl,.obj,.step,.stp" className="hidden" disabled={processando} onChange={(e) => { processar(e.target.files?.[0]); e.target.value = ""; }} />
+          <span className="text-xs">.gcode.3mf (recomendado) · .3mf · .gcode · .stl · .zip — até 200 MB. O arquivo é lido no seu navegador; só vai para o servidor quando você salvar.</span>
+          <input type="file" accept=".3mf,.gcode,.stl,.obj,.step,.stp,.zip" className="hidden" disabled={processando} onChange={(e) => { processar(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
         {falha && <div className="mt-4"><ErrorBox erro={falha} /></div>}
         <div className="mt-4"><Aviso>No Bambu Studio: fatie o projeto e use <b>Arquivo → Exportar → Exportar arquivo de placa fatiada</b> (gera o .gcode.3mf com tempo, peso e filamentos de cada placa).</Aviso></div>

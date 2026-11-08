@@ -9,7 +9,7 @@ import { useDados, useParam } from "@/lib/hooks";
 import { toast, erro } from "@/lib/toast";
 import { brl, num, numOuNull, erroMsg, cn } from "@/lib/utils";
 import { importarArquivo, sugerirMaterial, precoKg, type Importado, type MatCadastro } from "@/lib/importar3d";
-import { salvarNaBiblioteca, type Projeto } from "@/lib/biblioteca";
+import { salvarNaBiblioteca, licencaDoArquivo, usoComercial, LICENCAS, type Projeto } from "@/lib/biblioteca";
 import { calcularItem, custoMaterial, depreciacaoHora, type Config as CfgCalc } from "@/lib/precificacao";
 import { Button, Card, CardTitle, Field, Input, Select, Grid, Modal, Table, Td, Loading, ErrorBox, Badge, Aviso, Checkbox } from "@/components/ui";
 
@@ -30,6 +30,7 @@ function Conteudo() {
   const [falha, setFalha] = useState("");
   const [fonte, setFonte] = useState<Fonte | null>(null);
   const [nome, setNome] = useState("");
+  const [licenca, setLicenca] = useState<string>("propria");
   const [slots, setSlots] = useState<FilSlot[]>([]);
   const [placas, setPlacas] = useState<PlacaEd[]>([]);
   const [modo, setModo] = useState<"placa" | "peca">("placa");
@@ -72,6 +73,7 @@ function Conteudo() {
     setFalha(""); setProcessando(true); setFonte(null);
     try {
       const imp = await importarArquivo(arq);
+      setLicenca(licencaDoArquivo(imp.licenca) ?? "propria");
       setFonte({ tipo: "arquivo", imp, miniatura: imp.miniatura ? URL.createObjectURL(new Blob([imp.miniatura as BlobPart], { type: "image/png" })) : null });
       preparar(imp);
     } catch (e) {
@@ -88,6 +90,7 @@ function Conteudo() {
         const [p] = await q<Projeto[]>(sb().from("projetos_3d").select("*").eq("id", projetoUrl));
         if (!p) throw new Error("Projeto não encontrado");
         const md = p.metadados as { placas?: { indice: number; nome: string | null; tempo_min: number | null; objetos: string[]; filamentos: { slot: number; peso_g: number | null; tipo: string | null; cor: string | null; perfil: string | null }[] }[]; filamentos?: { slot: number; tipo: string | null; cor: string | null; perfil: string | null; peso_g: number | null }[] };
+        setLicenca(p.licenca || "outra");
         setFonte({ tipo: "projeto", projeto: p, miniatura: p.miniatura_path ? await urlTemporaria(p.miniatura_path).catch(() => null) : null });
         preparar({ nome: p.nome, impressora: p.impressora_modelo, placas: md.placas || [], tempo_total_min: p.tempo_estimado_min,
           filamentos: md.filamentos?.length ? md.filamentos : (p.materiais.length ? p.materiais : [null]).map((t, i) => ({ slot: i + 1, tipo: t, cor: p.cores[i] || null, perfil: null, peso_g: i === 0 ? p.peso_g : null })) });
@@ -155,7 +158,7 @@ function Conteudo() {
     try {
       let projetoId: string;
       if (fonte.tipo === "arquivo") {
-        const r = await salvarNaBiblioteca(app.empresa.id, fonte.imp, { nome });
+        const r = await salvarNaBiblioteca(app.empresa.id, fonte.imp, { nome, licenca });
         projetoId = r.projeto.id;
         if (r.duplicado) toast(`Este arquivo já estava na biblioteca (${r.projeto.nome}): usando o mesmo projeto`);
       } else projetoId = fonte.projeto.id;
@@ -206,6 +209,10 @@ function Conteudo() {
             <div className="flex h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">{fonte.miniatura ? <img src={fonte.miniatura} alt="" className="h-full w-full object-contain" /> : <Layers className="h-10 w-10 text-slate-300" />}</div>
             <div className="min-w-60 flex-1 space-y-2">
               <Field label="Nome do projeto"><Input value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
+              {fonte.tipo === "arquivo"
+                ? <Field label="Licença do modelo" hint={fonte.imp.licenca ? `No arquivo: ${fonte.imp.licenca}` : "O arquivo não informa a licença: confirme de quem é o modelo"}>
+                    <Select value={licenca} onChange={(e) => setLicenca(e.target.value)}>{Object.entries(LICENCAS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
+                : <p className="text-xs text-slate-500">Licença: {LICENCAS[licenca] || licenca}</p>}
               <div className="flex flex-wrap gap-2 text-xs">
                 <Badge tom="azul">{fonte.tipo === "projeto" ? "Da biblioteca" : ext?.tipo}</Badge>
                 {ext?.fatiador && <Badge>{ext.fatiador}</Badge>}
@@ -308,7 +315,10 @@ function Conteudo() {
             </dl>
             {semDados && <div className="mt-3"><Aviso tom="amarelo">Há placa sem tempo ou sem peso: o custo fica incompleto.</Aviso></div>}
             {calc.erroCalc && <div className="mt-3"><Aviso tom="vermelho">{calc.erroCalc}</Aviso></div>}
-            <Button className="mt-4 w-full" loading={salvando} disabled={!calc.itens.length || semMaterial || !!calc.erroCalc} onClick={salvar}><Save className="h-4 w-4" /> Salvar orçamento</Button>
+            {usoComercial(licenca) !== "permitido" && <div className="mt-3"><Aviso tom="vermelho">{usoComercial(licenca) === "proibido"
+              ? "A licença deste modelo não permite venda. Para orçar, compre a licença comercial do autor e registre-a no projeto."
+              : "Licença não confirmada: escolha a licença do modelo antes de orçar."}{fonte.tipo === "projeto" && " Só o dono ou um administrador altera a licença, na tela do projeto."}</Aviso></div>}
+            <Button className="mt-4 w-full" loading={salvando} disabled={!calc.itens.length || semMaterial || !!calc.erroCalc || usoComercial(licenca) !== "permitido"} onClick={salvar}><Save className="h-4 w-4" /> Salvar orçamento</Button>
             <p className="mt-2 text-xs text-slate-500">Salva o projeto na biblioteca e abre o orçamento, onde você gera o PDF, envia o link ao comprador e converte em pedido quando for aprovado. Os valores ficam congelados no orçamento; o custo real aparece depois, nas ordens de produção.</p>
           </Card>
         </div>

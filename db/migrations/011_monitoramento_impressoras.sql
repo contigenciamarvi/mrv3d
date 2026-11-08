@@ -76,13 +76,19 @@ end; $$;
 -- chamado pelo agente (chave pública + código): devolve a credencial própria do agente
 create or replace function public.agente_parear(p_codigo text, p_dados jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare pa public.agente_pareamentos; v_token text := 'mrv3d_ag_' || encode(extensions.gen_random_bytes(32), 'hex'); v_ag uuid; v_cod text := upper(regexp_replace(coalesce(p_codigo, ''), '[^A-Za-z0-9]', '', 'g'));
+declare pa public.agente_pareamentos; v_lim int; v_token text := 'mrv3d_ag_' || encode(extensions.gen_random_bytes(32), 'hex'); v_ag uuid; v_cod text := upper(regexp_replace(coalesce(p_codigo, ''), '[^A-Za-z0-9]', '', 'g'));
 begin
   if length(v_cod) <> 10 then raise exception 'Código de pareamento inválido'; end if;
   v_cod := substr(v_cod, 1, 5) || '-' || substr(v_cod, 6, 5);
   select * into pa from public.agente_pareamentos where codigo_hash = encode(extensions.digest(v_cod, 'sha256'), 'hex') for update;
   if pa.id is null or pa.usado_em is not null or pa.expira_em < now() then raise exception 'Código inválido, já usado ou expirado: gere outro no painel'; end if;
   if not exists (select 1 from public.empresas where id = pa.empresa_id and status not in ('suspensa','cancelada')) then raise exception 'Empresa indisponível'; end if;
+  -- o limite do plano vale no momento do pareamento (vários códigos podem ter sido gerados antes)
+  perform pg_advisory_xact_lock(hashtext('agentes:' || pa.empresa_id::text));
+  v_lim := (private.plano_empresa(pa.empresa_id)).limite_agentes;
+  if v_lim is not null and (select count(*) from public.agentes_locais where empresa_id = pa.empresa_id and ativo) >= v_lim then
+    raise exception 'O plano da empresa permite % agente(s) ativo(s). Revogue um agente no painel ou faça upgrade.', v_lim;
+  end if;
   insert into public.agentes_locais(empresa_id, nome, token_hash, token_prefixo, versao, maquina, sistema, created_by)
   values (pa.empresa_id, pa.nome, encode(extensions.digest(v_token, 'sha256'), 'hex'), left(v_token, 14), left(p_dados->>'versao', 30), left(p_dados->>'maquina', 100), left(p_dados->>'sistema', 60), pa.created_by)
   returning id into v_ag;
@@ -107,8 +113,8 @@ alter table public.impressoras
   add column if not exists dispositivo_id text check (dispositivo_id is null or dispositivo_id ~ '^[A-Za-z0-9._-]{3,64}$'),
   add column if not exists agente_id uuid references public.agentes_locais(id) on delete set null;
 create unique index if not exists impressoras_dispositivo_uq on public.impressoras(empresa_id, conexao_tipo, upper(dispositivo_id)) where dispositivo_id is not null;
--- número de série Bambu é físico: não pode estar ligado a duas empresas
-create unique index if not exists impressoras_serial_bambu_uq on public.impressoras(upper(dispositivo_id)) where conexao_tipo = 'bambu_lan' and dispositivo_id is not null;
+-- o número de série é único dentro da empresa (impressoras_dispositivo_uq). Não é global: uma empresa
+-- não pode bloquear a impressora de outra nem descobrir se um número de série já está cadastrado.
 
 create or replace function private.checar_conexao_impressora() returns trigger
 language plpgsql security definer set search_path = '' as $$
@@ -120,9 +126,6 @@ begin
     raise exception 'Agente não encontrado ou revogado';
   end if;
   if new.dispositivo_id is not null and (tg_op = 'INSERT' or old.dispositivo_id is null) then
-    if new.conexao_tipo = 'bambu_lan' and exists (select 1 from public.impressoras where conexao_tipo = 'bambu_lan' and upper(dispositivo_id) = upper(new.dispositivo_id) and empresa_id <> new.empresa_id) then
-      raise exception 'Este número de série já está ligado a outra conta. Para transferir a impressora, fale com o suporte.';
-    end if;
     v_lim := (private.plano_empresa(new.empresa_id)).limite_impressoras_conectadas;
     if v_lim is not null and (select count(*) from public.impressoras where empresa_id = new.empresa_id and dispositivo_id is not null and id <> new.id) >= v_lim then
       raise exception 'Seu plano permite % impressora(s) conectada(s) ao monitoramento.', v_lim;
@@ -220,7 +223,7 @@ end; $$;
 -- aplica um evento de impressão ao trabalho correspondente
 create or replace function private.aplicar_evento_trabalho(p_emp uuid, p_imp uuid, p_tipo text, p_em timestamptz, p_chave text, p_arquivo text, p_dados jsonb) returns uuid
 language plpgsql security definer set search_path = '' as $$
-declare t public.impressora_trabalhos; v_dec int := nullif(p_dados->>'decorrido_s', '')::int;
+declare t public.impressora_trabalhos; v_dec int := round(nullif(p_dados->>'decorrido_s', '')::numeric)::int;
 begin
   if p_tipo = 'impressao_iniciada' then
     insert into public.impressora_trabalhos(empresa_id, impressora_id, chave, arquivo, iniciado_em)
@@ -259,7 +262,7 @@ exception when others then return null; end; $$;
 create or replace function public.agente_reportar(p_token text, p_dados jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare a public.agentes_locais; i jsonb; e jsonb; v_imp public.impressoras; v_det jsonb := '[]'::jsonb; v_n int := 0; v_ev int := 0; v_tr uuid; v_em timestamptz; v_med timestamptz;
-  v_tipos constant text[] := array['bambu_lan','moonraker','octoprint']; v_dias int; v_ok boolean;
+  v_tipos constant text[] := array['bambu_lan','moonraker','octoprint']; v_dias int; v_ok boolean; v_rej int := 0;
 begin
   if p_token is null or p_token !~ '^mrv3d_ag_[0-9a-f]{64}$' then raise exception 'Token inválido'; end if;
   select * into a from public.agentes_locais where token_hash = encode(extensions.digest(p_token, 'sha256'), 'hex') for update;
@@ -278,8 +281,10 @@ begin
       v_em := (e->>'em')::timestamptz;
     exception when others then continue; end;
     if v_em is null or v_em > now() + interval '5 minutes' or v_em < now() - interval '30 days' then continue; end if;
-    if (e->>'id') !~ '^[0-9a-f-]{36}$' or (e->>'tipo') not in ('conectada','desconectada','erro_autenticacao','impressao_iniciada','impressao_pausada','impressao_retomada',
+    if coalesce(e->>'id', '') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' or coalesce(e->>'tipo', '') not in ('conectada','desconectada','erro_autenticacao','impressao_iniciada','impressao_pausada','impressao_retomada',
         'impressao_concluida','impressao_falhou','impressao_cancelada','temperatura_anormal','erro') then continue; end if;
+    -- cada evento isolado: um evento ruim é descartado sem derrubar o envio inteiro (senão a fila do agente travaria)
+    begin
     select * into v_imp from public.impressoras where empresa_id = a.empresa_id and conexao_tipo = (e->>'tipo_conexao') and upper(dispositivo_id) = upper(left(e->>'dispositivo_id', 64));
     if v_imp.id is null then continue; end if;
     insert into public.impressora_eventos_integracao(id, empresa_id, impressora_id, agente_id, tipo, ocorrido_em, dados)
@@ -294,6 +299,8 @@ begin
                 jsonb_build_object('decorrido_s', private.num_faixa(e#>'{dados,decorrido_s}', 0, 2592000), 'progresso', private.num_faixa(e#>'{dados,progresso}', 0, 100)));
       if v_tr is not null then update public.impressora_eventos_integracao set trabalho_id = v_tr where id = (e->>'id')::uuid; end if;
     end if;
+    exception when others then v_rej := v_rej + 1;
+    end;
     v_ok := null;
   end loop;
 
@@ -305,6 +312,7 @@ begin
       v_det := v_det || jsonb_build_array(jsonb_build_object('tipo_conexao', i->>'tipo_conexao', 'dispositivo_id', i->>'dispositivo_id', 'nome', left(i->>'nome', 80), 'modelo', left(i->>'modelo', 60)));
       continue;
     end if;
+    begin
     begin v_med := coalesce((i->>'medido_em')::timestamptz, now()); exception when others then v_med := now(); end;
     if v_med > now() + interval '5 minutes' then v_med := now(); end if;
     insert into public.impressora_telemetria(impressora_id, empresa_id, agente_id, conexao, estado, trabalho_id, arquivo, progresso, decorrido_s, restante_s, camada, total_camadas,
@@ -329,6 +337,8 @@ begin
     -- progresso do trabalho aberto
     update public.impressora_trabalhos set progresso = private.num_faixa(i->'progresso', 0, 100)
      where impressora_id = v_imp.id and status in ('imprimindo','pausado') and private.num_faixa(i->'progresso', 0, 100) is not null;
+    exception when others then v_rej := v_rej + 1;
+    end;
   end loop;
 
   update public.agentes_locais set ultimo_contato = now(), versao = coalesce(left(p_dados->>'versao', 30), versao), dispositivos_detectados = v_det where id = a.id;
@@ -339,7 +349,7 @@ begin
   -- retenção do histórico conforme o plano (aos poucos)
   v_dias := coalesce((private.plano_empresa(a.empresa_id)).telemetria_dias, 90);
   delete from public.impressora_eventos_integracao where id in (select id from public.impressora_eventos_integracao where empresa_id = a.empresa_id and ocorrido_em < now() - make_interval(days => v_dias) limit 500);
-  return jsonb_build_object('ok', true, 'impressoras', v_n, 'eventos_novos', v_ev, 'nao_vinculadas', jsonb_array_length(v_det));
+  return jsonb_build_object('ok', true, 'impressoras', v_n, 'eventos_novos', v_ev, 'rejeitados', v_rej, 'nao_vinculadas', jsonb_array_length(v_det));
 end; $$;
 
 -- ---------- Ações do usuário ----------------------------------------------
@@ -410,9 +420,12 @@ begin
   delete from private.integracao_credenciais where empresa_id = p_empresa and provedor = p_provedor;
   delete from public.impressora_telemetria t using public.impressoras i where i.id = t.impressora_id and i.empresa_id = p_empresa and i.conexao_tipo = 'bambu_lan';
   update public.impressoras set conexao_tipo = 'nenhuma' where empresa_id = p_empresa and conexao_tipo = 'bambu_lan';
+  -- os códigos de acesso LAN ficam no computador do agente: revogar o agente é o que faz o servidor parar de aceitar os dados
+  update public.agentes_locais set ativo = false, revogado_em = now(), revogado_por = 'empresa' where empresa_id = p_empresa and ativo;
+  update public.agente_pareamentos set expira_em = now() where empresa_id = p_empresa and usado_em is null and expira_em > now();
   insert into public.integracoes(empresa_id, provedor, status, modo) values (p_empresa, p_provedor, 'desconectada', 'manual')
   on conflict (empresa_id, provedor) do update set status = 'desconectada', modo = 'manual', conta_rotulo = null, ultimo_erro = null, updated_at = now();
-  perform private.registrar_evento(p_empresa, 'desconexao', 'Integração Bambu Lab desconectada e credenciais excluídas', null);
+  perform private.registrar_evento(p_empresa, 'desconexao', 'Integração Bambu Lab desconectada: credenciais excluídas e agentes locais revogados', null);
 end; $$;
 
 create or replace function public.salvar_config_integracao(p_empresa uuid, p_config jsonb)

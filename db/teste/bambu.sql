@@ -35,7 +35,19 @@ select pg_temp.ok((select uso_comercial = 'proibido' from public.projetos_3d whe
 select pg_temp.falha(format($$insert into public.projetos_3d(empresa_id, nome, origem, makerworld_url) values (%L, 'dup', 'makerworld', 'https://MAKERWORLD.com/en/models/12345')$$, (select v from bb where k = 'ea')), 'BB link do MakerWorld duplicado', 'projetos_mw_uq');
 select pg_temp.falha(format($$insert into public.projetos_3d(empresa_id, nome, origem, makerworld_url) values (%L, 'x', 'makerworld', 'https://evil.com/makerworld.com/')$$, (select v from bb where k = 'ea')), 'BB só links do MakerWorld', 'check');
 select pg_temp.falha($$select public.projeto_criar_orcamento((select id from public.projetos_3d where nome = 'Vaso Voronoi'), null, 1)$$, 'BB licença não comercial bloqueia orçamento', 'licença');
+insert into bb values ('olic', null);
+insert into public.orcamentos(empresa_id, titulo) values ((select v from bb where k = 'ea'), 'teste licença');
+update bb set v = (select id from public.orcamentos where titulo = 'teste licença') where k = 'olic';
+select pg_temp.falha(format($$insert into public.orcamento_itens(empresa_id, orcamento_id, descricao, projeto_id) values (%L, %L, 'x', %L)$$, (select v from bb where k = 'ea'), (select v from bb where k = 'olic'),
+  (select id from public.projetos_3d where nome = 'Vaso Voronoi')), 'BB item de orçamento direto com modelo não comercial bloqueado', 'licença');
+select pg_temp.falha(format($$select public.projeto_vincular(%L, 'ordem', gen_random_uuid())$$, (select id from public.projetos_3d where nome = 'Vaso Voronoi')), 'BB modelo não comercial não vai para produção', 'licença');
+insert into public.projetos_3d(empresa_id, nome, origem, makerworld_url, licenca) values ((select v from bb where k = 'ea'), 'Sem licença', 'makerworld', 'https://makerworld.com/en/models/999', 'outra');
+select pg_temp.falha($$select public.projeto_criar_orcamento((select id from public.projetos_3d where nome = 'Sem licença'), null, 1)$$, 'BB licença não confirmada também bloqueia', 'não foi confirmada');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select pg_temp.falha($$update public.projetos_3d set licenca = 'licenca_comercial' where nome = 'Vaso Voronoi'$$, 'BB comercial não libera licença', 'administrador');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 update public.projetos_3d set licenca = 'licenca_comercial' where nome = 'Vaso Voronoi';
+select pg_temp.ok((select count(*) = 1 from public.integracao_eventos where mensagem like 'Licença alterada: Vaso Voronoi (sdfl → licenca_comercial)'), 'BB troca de licença fica no histórico');
 select pg_temp.ok((select uso_comercial = 'permitido' from public.projetos_3d where nome = 'Vaso Voronoi'), 'BB licença comercial comprada libera');
 select pg_temp.ok((select count(*) >= 3 from public.integracao_eventos where empresa_id = (select v from bb where k = 'ea') and tipo in ('importacao','atualizacao')), 'BB histórico registra importação e atualização');
 

@@ -9,7 +9,7 @@ import { useDados } from "@/lib/hooks";
 import { toast, erro } from "@/lib/toast";
 import { num, dataHora, erroMsg, numOuNull, cn } from "@/lib/utils";
 import { importarArquivo, type Importado } from "@/lib/importar3d";
-import { salvarNaBiblioteca, LICENCAS, ORIGENS, licencaDoArquivo, type Projeto } from "@/lib/biblioteca";
+import { salvarNaBiblioteca, LICENCAS, ORIGENS, licencaDoArquivo, usoComercial, type Projeto } from "@/lib/biblioteca";
 import { Button, Card, CardTitle, Field, Input, Select, Textarea, Grid, Modal, Table, Td, Loading, ErrorBox, Empty, Badge, Aviso, Confirmar } from "@/components/ui";
 
 const horas = (min: number | null) => (min ? `${Math.floor(min / 60)}h ${Math.round(min % 60)}min` : "—");
@@ -90,7 +90,7 @@ function DetalheProjeto({ id, onClose, onMudou }: { id: string; onClose: () => v
     configuracoes?: Record<string, string>; avisos?: string[]; peso_inclui_purga_suporte?: boolean; proveniencia?: Record<string, { status: string; fonte: string }> };
   const mudou = () => { recarregar(); onMudou(); };
   const acao = async (fn: () => Promise<unknown>, msg: string) => { try { await fn(); toast(msg); mudou(); return true; } catch (e) { erro(e); return false; } };
-  const bloqueado = p?.uso_comercial === "proibido";
+  const bloqueado = !!p && p.uso_comercial !== "permitido";
 
   return (
     <Modal aberto titulo={p ? p.nome : "Projeto"} onClose={onClose} largura="max-w-5xl">
@@ -121,7 +121,9 @@ function DetalheProjeto({ id, onClose, onMudou }: { id: string; onClose: () => v
               <div className="text-xs text-slate-500">Importado {dataHora(p.created_at)}{p.arquivo_nome ? ` · ${p.arquivo_nome}` : ""}{p.tamanho_bytes ? ` · ${num(p.tamanho_bytes / 1048576, 1)} MB` : ""}</div>
             </div>
           </div>
-          {bloqueado && <Aviso tom="vermelho"><AlertTriangle className="mr-1 inline h-4 w-4" />A licença deste modelo não permite venda. Para usar em orçamento ou produção, compre uma licença comercial do autor e mude a licença abaixo.</Aviso>}
+          {bloqueado && <Aviso tom="vermelho"><AlertTriangle className="mr-1 inline h-4 w-4" />{p.uso_comercial === "proibido"
+            ? "A licença deste modelo não permite venda. Para usar em orçamento ou produção, compre uma licença comercial do autor e mude a licença (dono ou administrador)."
+            : "Licença não confirmada. Para usar em orçamento ou produção, o dono ou um administrador precisa informar a licença do modelo."}</Aviso>}
 
           <div className="flex flex-wrap gap-2">
             {app.pode("orcamentos_criar") && <Button disabled={bloqueado} onClick={() => router.push(`/orcamentos/importar/?projeto=${p.id}`)}><FileText className="h-4 w-4" /> Usar no orçamento</Button>}
@@ -159,9 +161,9 @@ function DetalheProjeto({ id, onClose, onMudou }: { id: string; onClose: () => v
           {p.descricao && <p className="whitespace-pre-line text-sm text-slate-600 dark:text-slate-300">{p.descricao}</p>}
 
           <Modal aberto={!!ed} titulo="Editar projeto" onClose={() => setEd(null)}>
-            {ed && <form className="space-y-3" onSubmit={async (e) => { e.preventDefault(); if (await acao(() => q(sb().from("projetos_3d").update({ nome: ed.nome, licenca: ed.licenca, autor: ed.autor || null, descricao: ed.descricao || null, tags: ed.tags || [] }).eq("id", p.id)), "Projeto atualizado")) setEd(null); }}>
+            {ed && <form className="space-y-3" onSubmit={async (e) => { e.preventDefault(); if (await acao(() => q(sb().from("projetos_3d").update({ nome: ed.nome, ...(ed.licenca !== p.licenca ? { licenca: ed.licenca } : {}), autor: ed.autor || null, descricao: ed.descricao || null, tags: ed.tags || [] }).eq("id", p.id)), "Projeto atualizado")) setEd(null); }}>
               <Field label="Nome"><Input required value={ed.nome || ""} onChange={(e) => setEd({ ...ed, nome: e.target.value })} /></Field>
-              <Field label="Licença" hint="Define se o modelo pode ser usado em vendas"><Select value={ed.licenca || "outra"} onChange={(e) => setEd({ ...ed, licenca: e.target.value })}>{Object.entries(LICENCAS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
+              <Field label="Licença" hint={["dono", "admin"].includes(app.papel) ? "Define se o modelo pode ser usado em vendas (a troca fica no histórico)" : "Só o dono ou um administrador altera a licença"}><Select disabled={!["dono", "admin"].includes(app.papel)} value={ed.licenca || "outra"} onChange={(e) => setEd({ ...ed, licenca: e.target.value })}>{Object.entries(LICENCAS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
               <Field label="Autor"><Input value={ed.autor || ""} onChange={(e) => setEd({ ...ed, autor: e.target.value })} /></Field>
               <Field label="Etiquetas" hint="Separadas por vírgula"><Input value={(ed.tags || []).join(", ")} onChange={(e) => setEd({ ...ed, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 20) })} /></Field>
               <Field label="Descrição"><Textarea value={ed.descricao || ""} onChange={(e) => setEd({ ...ed, descricao: e.target.value })} /></Field>
@@ -298,7 +300,8 @@ export function Importador({ raiz, onPronto }: { raiz?: Projeto | null; onPronto
               {imp.filamentos.map((f) => <span key={f.slot} className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-800">{f.cor && <span className="h-3 w-3 rounded-full border" style={{ background: f.cor }} />}{f.tipo || `Filamento ${f.slot}`}{f.peso_g != null ? ` ${num(f.peso_g, 1)} g` : ""}</span>)}
             </div>
             {imp.avisos.map((a, i) => <Aviso key={i} tom="amarelo">{a}</Aviso>)}
-            {licenca && ["sdfl", "cc_by_nc", "cc_by_nc_sa", "cc_by_nc_nd"].includes(licenca) && <Aviso tom="vermelho">Licença sem uso comercial: o projeto fica na biblioteca, mas não poderá ir para orçamento ou produção até você registrar uma licença comercial.</Aviso>}
+            {usoComercial(licenca) === "verificar" && <Aviso tom="amarelo">Licença não confirmada: o projeto fica na biblioteca, mas só vai para orçamento ou produção depois que a licença for informada.</Aviso>}
+            {usoComercial(licenca) === "proibido" && <Aviso tom="vermelho">Licença sem uso comercial: o projeto fica na biblioteca, mas não poderá ir para orçamento ou produção até você registrar uma licença comercial.</Aviso>}
             {dup && !raiz && <Aviso tom="amarelo">Este mesmo arquivo já está na biblioteca como <b>{dup.nome}</b>. Escolha: reutilizar o existente, importar como cópia separada ou enviar como nova versão dele.</Aviso>}
             <div className="flex flex-wrap gap-2">
               {raiz ? <Button loading={salvando} disabled={imp.arquivo.size > 50 * 1048576 || dup?.id === raiz.id} onClick={() => salvar("versao")}><GitBranch className="h-4 w-4" /> Salvar como nova versão</Button>

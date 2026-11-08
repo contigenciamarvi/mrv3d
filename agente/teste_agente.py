@@ -91,11 +91,85 @@ class Seguranca(unittest.TestCase):
         self.assertFalse(ag.host_permitido("127.0.0.1"))
         self.assertFalse(ag.host_permitido("169.254.169.254"))  # metadados de nuvem
         self.assertTrue(ag.host_permitido("8.8.8.8", permitir_publico=True))
+        self.assertFalse(ag.host_permitido("::ffff:127.0.0.1"))  # IPv4 dentro de IPv6 também é recusado
+        self.assertFalse(ag.host_permitido("::1"))
+        self.assertEqual(ag.ip_validado("192.168.0.50"), "192.168.0.50")
+
+    def test_sem_redirecionamento(self):
+        """Um aparelho da rede não consegue mandar o agente (nem a chave da API) para outro endereço."""
+        import http.server
+        import threading
+        recebidos = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                recebidos.append((self.path, self.headers.get("X-Api-Key"), self.headers.get("Host")))
+                if self.path == "/redir":
+                    self.send_response(302)
+                    self.send_header("Location", "http://169.254.169.254/latest/meta-data/")
+                    self.end_headers()
+                else:
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(b'{"ok": true}')
+
+            def log_message(self, *_a):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        porta = srv.server_address[1]
+        original = ag.ip_validado
+        ag.ip_validado = lambda host, publico=False: "127.0.0.1" if host == "impressora.lan" else None  # simula IP da rede local
+        try:
+            self.assertEqual(ag._http_json("impressora.lan", porta, "/ok", {"X-Api-Key": "k"}), {"ok": True})
+            self.assertEqual(recebidos[-1], ("/ok", "k", f"impressora.lan:{porta}"))
+            with self.assertRaises(ag.urllib.error.HTTPError):
+                ag._http_json("impressora.lan", porta, "/redir", {"X-Api-Key": "k"})
+            self.assertEqual(len(recebidos), 2)  # não seguiu o redirecionamento
+            with self.assertRaises(ag.urllib.error.URLError):
+                ag._http_json("site-publico.com", porta, "/ok")
+        finally:
+            ag.ip_validado = original
+            srv.shutdown()
+            srv.server_close()
+
+    def test_certificado_bambu_fixado(self):
+        """Certificado diferente do registrado: o código de acesso não é enviado."""
+        original_ip, original_cert = ag.ip_validado, ag.certificado_sha256
+        ag.ip_validado = lambda host, publico=False: "192.168.0.60"
+        ag.certificado_sha256 = lambda ip, porta, timeout=6: "b" * 64
+        try:
+            try:
+                import paho.mqtt.client  # noqa: F401
+            except ImportError:
+                self.skipTest("paho-mqtt não instalado")
+            ad = ag.BambuLanAdapter({"tipo": "bambu_lan", "host": "192.168.0.60", "dispositivo_id": "SERIAL", "codigo_acesso": "1234", "cert_sha256": "a" * 64})
+            ad.connect()
+            self.assertIsNone(ad._cli)  # não conectou
+            self.assertEqual(ad.get_status()["conexao"], "erro_autenticacao")
+            novo = ag.BambuLanAdapter({"tipo": "bambu_lan", "host": "192.168.0.60", "dispositivo_id": "SERIAL", "codigo_acesso": "1234"})
+            novo.connect()  # primeira vez: registra
+            self.assertEqual(novo.conf["cert_sha256"], "b" * 64)
+            self.assertTrue(novo.config_mudou)
+            novo.disconnect()
+        finally:
+            ag.ip_validado, ag.certificado_sha256 = original_ip, original_cert
 
     def test_config_privada(self):
         ag.salvar_config({"token": "x", "impressoras": []})
         if os.name == "posix":
             self.assertEqual(oct(ag.CONFIG.stat().st_mode & 0o777), "0o600")
+            f = ag.Fila(ag.PASTA / "fila_teste.json")
+            f.adicionar([{"id": "1"}])
+            self.assertEqual(oct(f.caminho.stat().st_mode & 0o777), "0o600")
+            self.assertEqual(oct(ag.PASTA.stat().st_mode & 0o777), "0o700")
+
+    def test_lote_recusado_descartado(self):
+        f = ag.Fila(ag.PASTA / "fila_recusa.json")
+        f.adicionar([{"id": str(i)} for i in range(3)])
+        self.assertEqual(f.descartar_lote(2), 2)
+        self.assertEqual([e["id"] for e in f.itens], ["2"])
 
     def test_slug(self):
         self.assertEqual(ag.slug("Voron 2.4 / sala"), "Voron-2.4-sala")

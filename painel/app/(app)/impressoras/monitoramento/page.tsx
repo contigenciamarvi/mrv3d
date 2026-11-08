@@ -190,9 +190,12 @@ function ConectarImpressora({ imp, agentes, tel, onClose, onMudou }: { imp: Imp;
     } catch (e) { erro(e); }
   };
   useEffect(() => { if (salvo == null || confirmado) return; const t = setInterval(onMudou, 5000); return () => clearInterval(t); }, [salvo, confirmado, onMudou]);
-  const cmd = f.tipo === "bambu_lan" ? `python3 mrv3d_agente.py adicionar bambu --nome "${imp.nome}" --ip IP_DA_IMPRESSORA --serial ${f.id || "NUMERO_DE_SERIE"} --codigo CODIGO_DE_ACESSO_LAN`
-    : f.tipo === "moonraker" ? `python3 mrv3d_agente.py adicionar moonraker --nome "${imp.nome}" --ip IP_DA_IMPRESSORA${f.id ? ` --id ${f.id}` : ""}`
-    : `python3 mrv3d_agente.py adicionar octoprint --nome "${imp.nome}" --ip IP_DO_OCTOPRINT --api-key SUA_CHAVE${f.id ? ` --id ${f.id}` : ""}`;
+  // só caracteres seguros no comando que o usuário cola no terminal (o nome vem do cadastro e não é confiável)
+  const nomeCmd = (imp.nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9 ._-]/g, "").trim() || "impressora").slice(0, 60);
+  const idCmd = f.id.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 64);
+  const cmd = f.tipo === "bambu_lan" ? `python3 mrv3d_agente.py adicionar bambu --nome "${nomeCmd}" --ip IP_DA_IMPRESSORA --serial ${idCmd || "NUMERO_DE_SERIE"} --codigo CODIGO_DE_ACESSO_LAN`
+    : f.tipo === "moonraker" ? `python3 mrv3d_agente.py adicionar moonraker --nome "${nomeCmd}" --ip IP_DA_IMPRESSORA${idCmd ? ` --id ${idCmd}` : ""}`
+    : `python3 mrv3d_agente.py adicionar octoprint --nome "${nomeCmd}" --ip IP_DO_OCTOPRINT --api-key SUA_CHAVE${idCmd ? ` --id ${idCmd}` : ""}`;
   return (
     <Modal aberto titulo={`Conectar ${imp.nome}`} onClose={onClose} largura="max-w-2xl">
       <div className="space-y-4 text-sm">

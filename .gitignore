@@ -5,3 +5,4 @@ out/
 .env*
 !.env.example
 db/teste/*.log
+__pycache__/

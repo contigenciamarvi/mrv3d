@@ -22,6 +22,7 @@ depende do modelo e do firmware; nos firmwares com controle de autorização, us
 from __future__ import annotations
 
 import argparse
+import hashlib
 import ipaddress
 import json
 import logging
@@ -65,30 +66,54 @@ def ler_config() -> dict:
     return json.loads(CONFIG.read_text(encoding="utf-8"))
 
 
-def salvar_config(cfg: dict) -> None:
-    PASTA.mkdir(parents=True, exist_ok=True)
-    tmp = CONFIG.with_suffix(".tmp")
-    tmp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+def _pasta_privada() -> None:
+    PASTA.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
-        os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)  # só o dono lê (token e códigos de acesso)
+        os.chmod(PASTA, stat.S_IRWXU)  # só o dono entra na pasta (token, códigos de acesso, fila)
     except OSError:
         pass
-    tmp.replace(CONFIG)
+
+
+def gravar_privado(caminho: Path, texto: str) -> None:
+    """Grava já com permissão 600 (sem janela em que outro usuário consiga ler) e troca de forma atômica."""
+    _pasta_privada()
+    tmp = caminho.with_name(caminho.name + ".tmp")
+    try:
+        tmp.unlink()
+    except FileNotFoundError:
+        pass
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(texto)
+    os.replace(tmp, caminho)
+
+
+def salvar_config(cfg: dict) -> None:
+    gravar_privado(CONFIG, json.dumps(cfg, indent=2, ensure_ascii=False))
+
+
+def ip_validado(host: str, permitir_publico: bool = False) -> str | None:
+    """Proteção contra SSRF: resolve o nome uma vez e devolve o IP aprovado (a conexão usa esse IP,
+    então uma troca de DNS no meio do caminho não leva o agente para outro endereço)."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except (socket.gaierror, UnicodeError):
+        return None
+    escolhido = None
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        if ip.version == 6 and ip.ipv4_mapped:  # ::ffff:127.0.0.1 conta como 127.0.0.1
+            ip = ip.ipv4_mapped
+        if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved:
+            return None
+        if not (ip.is_private or permitir_publico):
+            return None
+        escolhido = escolhido or str(ip)
+    return escolhido
 
 
 def host_permitido(host: str, permitir_publico: bool = False) -> bool:
-    """Proteção contra SSRF: por padrão só endereços da rede local."""
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror:
-        return False
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
-            return False
-        if not (ip.is_private or permitir_publico):
-            return False
-    return True
+    return ip_validado(host, permitir_publico) is not None
 
 
 def slug(texto: str) -> str:
@@ -102,9 +127,11 @@ class PrinterAdapter(ABC):
 
     tipo = ""
 
-    def __init__(self, conf: dict):
+    def __init__(self, conf: dict, permitir_publico: bool = False):
         self.conf = conf
         self.nome = conf.get("nome") or conf.get("host")
+        self.permitir_publico = permitir_publico
+        self.config_mudou = False  # ex.: certificado da impressora registrado na primeira conexão
 
     @property
     def dispositivo_id(self) -> str:
@@ -124,9 +151,25 @@ class PrinterAdapter(ABC):
         return {"tipo_conexao": self.tipo, "dispositivo_id": self.dispositivo_id, "nome": self.nome}
 
 
-def _http_json(url: str, headers: dict | None = None, timeout: float = 6) -> dict:
-    req = urllib.request.Request(url, headers={"User-Agent": f"mrv3d-agente/{VERSAO}", **(headers or {})})
-    with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 (host validado antes)
+class _SemRedirecionamento(urllib.request.HTTPRedirectHandler):
+    """Um aparelho da rede não pode mandar o agente para outro endereço (nem levar junto a chave da API)."""
+
+    def redirect_request(self, *_a, **_k):
+        return None
+
+
+# sem proxy do sistema (o tráfego da impressora fica na rede local) e sem seguir redirecionamentos
+_ABRIR_LAN = urllib.request.build_opener(urllib.request.ProxyHandler({}), _SemRedirecionamento())
+
+
+def _http_json(host: str, porta: int, caminho: str, headers: dict | None = None, timeout: float = 6, permitir_publico: bool = False) -> dict:
+    ip = ip_validado(host, permitir_publico)
+    if not ip:
+        raise urllib.error.URLError("endereço fora da rede local")
+    alvo = f"[{ip}]" if ":" in ip else ip
+    req = urllib.request.Request(f"http://{alvo}:{int(porta)}{caminho}",
+                                 headers={"User-Agent": f"mrv3d-agente/{VERSAO}", "Host": f"{host}:{int(porta)}", **(headers or {})})
+    with _ABRIR_LAN.open(req, timeout=timeout) as r:  # noqa: S310 (IP validado acima)
         return json.loads(r.read(2_000_000).decode("utf-8"))
 
 
@@ -161,10 +204,10 @@ class MoonrakerAdapter(PrinterAdapter):
 
     def get_status(self) -> dict:
         porta = self.conf.get("porta", 7125)
-        url = f"http://{self.conf['host']}:{porta}/printer/objects/query?print_stats&virtual_sdcard&extruder&heater_bed&display_status"
+        caminho = "/printer/objects/query?print_stats&virtual_sdcard&extruder&heater_bed&display_status"
         headers = {"X-Api-Key": self.conf["api_key"]} if self.conf.get("api_key") else {}
         try:
-            return normalizar_moonraker(_http_json(url, headers).get("result", {}))
+            return normalizar_moonraker(_http_json(self.conf["host"], porta, caminho, headers, permitir_publico=self.permitir_publico).get("result", {}))
         except urllib.error.HTTPError as e:
             return {"conexao": "erro_autenticacao" if e.code in (401, 403) else "offline", "estado": "desconhecido"}
         except (urllib.error.URLError, OSError, ValueError):
@@ -202,12 +245,12 @@ class OctoPrintAdapter(PrinterAdapter):
     tipo = "octoprint"
 
     def get_status(self) -> dict:
-        base = f"http://{self.conf['host']}:{self.conf.get('porta', 80)}"
+        host, porta = self.conf["host"], self.conf.get("porta", 80)
         h = {"X-Api-Key": self.conf.get("api_key", "")}
         try:
-            job = _http_json(base + "/api/job", h)
+            job = _http_json(host, porta, "/api/job", h, permitir_publico=self.permitir_publico)
             try:
-                printer = _http_json(base + "/api/printer", h)
+                printer = _http_json(host, porta, "/api/printer", h, permitir_publico=self.permitir_publico)
             except urllib.error.HTTPError as e:
                 if e.code == 409:  # impressora desconectada do OctoPrint
                     return {"conexao": "offline", "estado": "desconhecido"}
@@ -246,8 +289,8 @@ def normalizar_bambu(p: dict) -> dict:
 class BambuLanAdapter(PrinterAdapter):
     tipo = "bambu_lan"
 
-    def __init__(self, conf: dict):
-        super().__init__(conf)
+    def __init__(self, conf: dict, permitir_publico: bool = False):
+        super().__init__(conf, permitir_publico)
         self._estado: dict = {}
         self._conexao = "offline"
         self._cli = None
@@ -261,6 +304,28 @@ class BambuLanAdapter(PrinterAdapter):
             self._conexao = "offline"
             return
         serial = self.conf["dispositivo_id"]
+        porta = int(self.conf.get("porta", 8883))
+        ip = ip_validado(self.conf["host"], self.permitir_publico)
+        if not ip:
+            log.error("Bambu %s: endereço fora da rede local", self.nome)
+            return
+        # a impressora usa certificado próprio: o agente guarda a impressão digital na primeira conexão
+        # e recusa outro certificado depois (impede que alguém na rede se passe pela impressora e leia o código de acesso)
+        try:
+            digital = certificado_sha256(ip, porta)
+        except OSError as e:
+            log.warning("Bambu %s: %s", self.nome, e)
+            self._conexao = "offline"
+            return
+        if not self.conf.get("cert_sha256"):
+            self.conf["cert_sha256"] = digital
+            self.config_mudou = True
+            log.info("Bambu %s: certificado registrado (%s…)", self.nome, digital[:16])
+        elif self.conf["cert_sha256"] != digital:
+            log.error("Bambu %s: o certificado da impressora mudou. Por segurança o código de acesso não foi enviado. "
+                      "Se você trocou a impressora ou atualizou o firmware, rode o comando adicionar de novo.", self.nome)
+            self._conexao = "erro_autenticacao"
+            return
         try:
             cli = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"mrv3d-{uuid.uuid4().hex[:8]}")  # paho 2.x
         except AttributeError:
@@ -274,6 +339,15 @@ class BambuLanAdapter(PrinterAdapter):
 
         def on_connect(c, _u, _f, rc, *_):
             codigo = getattr(rc, "value", rc)
+            try:
+                der = c.socket().getpeercert(binary_form=True)
+            except (AttributeError, OSError, ValueError):
+                der = None
+            if codigo == 0 and (not der or hashlib.sha256(der).hexdigest() != self.conf.get("cert_sha256")):
+                log.error("Bambu %s: certificado diferente do registrado; desconectando", self.nome)
+                self._conexao = "erro_autenticacao"
+                c.disconnect()
+                return
             if codigo == 0:
                 self._conexao = "online"
                 c.subscribe(f"device/{serial}/report")
@@ -298,7 +372,7 @@ class BambuLanAdapter(PrinterAdapter):
         cli.on_connect, cli.on_disconnect, cli.on_message = on_connect, on_disconnect, on_message
         cli.reconnect_delay_set(min_delay=2, max_delay=60)
         try:
-            cli.connect_async(self.conf["host"], int(self.conf.get("porta", 8883)), keepalive=60)
+            cli.connect_async(ip, porta, keepalive=60)
             cli.loop_start()
             self._cli = cli
         except OSError as e:
@@ -316,6 +390,18 @@ class BambuLanAdapter(PrinterAdapter):
             if not self._estado:
                 return {"conexao": "online", "estado": "desconhecido"}
             return normalizar_bambu(dict(self._estado))
+
+
+def certificado_sha256(ip: str, porta: int, timeout: float = 6) -> str:
+    """Impressão digital (SHA-256) do certificado que a impressora apresenta."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE  # certificado próprio da impressora: conferido pela impressão digital
+    with socket.create_connection((ip, porta), timeout=timeout) as bruto, ctx.wrap_socket(bruto) as tls:
+        der = tls.getpeercert(binary_form=True)
+    if not der:
+        raise OSError("a impressora não apresentou certificado")
+    return hashlib.sha256(der).hexdigest()
 
 
 ADAPTADORES = {"bambu_lan": BambuLanAdapter, "moonraker": MoonrakerAdapter, "octoprint": OctoPrintAdapter}
@@ -381,7 +467,11 @@ class Fila:
 
     def __init__(self, caminho: Path = FILA, maximo: int = FILA_MAX):
         self.caminho, self.maximo = caminho, maximo
-        self.itens: list[dict] = json.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else []
+        self.recusas = 0  # envios seguidos recusados pelo servidor
+        try:
+            self.itens: list[dict] = json.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else []
+        except ValueError:
+            self.itens = []
 
     def adicionar(self, eventos: list[dict]) -> None:
         self.itens.extend(eventos)
@@ -396,9 +486,15 @@ class Fila:
         self.itens = [e for e in self.itens if e["id"] not in ids]
         self._salvar()
 
+    def descartar_lote(self, n: int = 200) -> int:
+        """Lote que o servidor recusa sempre: descarta para a fila não travar."""
+        lote = self.itens[:n]
+        self.itens = self.itens[n:]
+        self._salvar()
+        return len(lote)
+
     def _salvar(self) -> None:
-        PASTA.mkdir(parents=True, exist_ok=True)
-        self.caminho.write_text(json.dumps(self.itens), encoding="utf-8")
+        gravar_privado(self.caminho, json.dumps(self.itens))
 
 
 # --------------------------------------------------------------------------- servidor
@@ -457,6 +553,11 @@ def cmd_adicionar(a):
         if not a.serial or not a.codigo:
             raise SystemExit("Bambu Lab: informe --serial e --codigo (código de acesso LAN mostrado na tela da impressora)")
         imp["dispositivo_id"], imp["codigo_acesso"] = a.serial.upper(), a.codigo
+        try:  # registra agora o certificado da impressora (o usuário está na frente dela)
+            imp["cert_sha256"] = certificado_sha256(ip_validado(a.ip, cfg.get("permitir_ip_publico", False)), int(a.porta or 8883))
+            print(f"Certificado da impressora registrado: {imp['cert_sha256'][:16]}…")
+        except OSError as e:
+            print(f"Aviso: não consegui ler o certificado agora ({e}); ele será registrado na primeira conexão.")
     else:
         imp["dispositivo_id"] = slug(a.id or a.nome)
         if a.api_key:
@@ -476,7 +577,7 @@ def criar_adaptadores(cfg) -> list[PrinterAdapter]:
         if not host_permitido(imp["host"], cfg.get("permitir_ip_publico", False)):
             log.error("Ignorando %s: endereço fora da rede local", imp.get("nome"))
             continue
-        ads.append(ADAPTADORES[imp["tipo"]](imp))
+        ads.append(ADAPTADORES[imp["tipo"]](imp, cfg.get("permitir_ip_publico", False)))
     return ads
 
 
@@ -487,6 +588,8 @@ def cmd_testar(_a):
         raise SystemExit("Nenhuma impressora configurada")
     for ad in ads:
         ad.connect()
+    if any(ad.config_mudou for ad in ads):
+        salvar_config(cfg)
     time.sleep(6)
     for ad in ads:
         s = ad.get_status()
@@ -537,10 +640,17 @@ def ciclo(cfg, ads, det: Detector, fila: Fila) -> None:
         r = rpc(cfg, "agente_reportar", {"p_token": cfg["token"], "p_dados": {"versao": VERSAO, "impressoras": estados, "eventos": lote}})
         if r and not r.get("ignorado"):
             fila.confirmar({e["id"] for e in lote})
+            fila.recusas = 0
+            if r.get("rejeitados"):
+                log.warning("Servidor descartou %s item(ns) inválido(s)", r["rejeitados"])
     except RuntimeError as e:
         log.error("Servidor recusou o envio: %s", e)
         if "revogado" in str(e) or "Token inválido" in str(e):
             raise SystemExit("Este agente foi revogado no painel. Gere um novo código e pareie de novo.") from None
+        fila.recusas += 1
+        if fila.recusas >= 5 and lote:
+            log.error("Descartando %d evento(s) que o servidor recusou 5 vezes seguidas", fila.descartar_lote(len(lote)))
+            fila.recusas = 0
     except (urllib.error.URLError, OSError) as e:
         log.warning("Sem conexão com o servidor (%s): %d evento(s) guardado(s) para enviar depois", e, len(fila.itens))
 
@@ -552,6 +662,8 @@ def cmd_rodar(_a):
     ads = criar_adaptadores(cfg)
     for ad in ads:
         ad.connect()
+    if any(ad.config_mudou for ad in ads):
+        salvar_config(cfg)
     det, fila = Detector(), Fila()
     log.info("Agente %s rodando com %d impressora(s)", VERSAO, len(ads))
     try:
@@ -566,7 +678,7 @@ def cmd_rodar(_a):
 
 
 def main(argv=None):
-    PASTA.mkdir(parents=True, exist_ok=True)
+    _pasta_privada()
     h = logging.handlers.RotatingFileHandler(PASTA / "agente.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=[h, logging.StreamHandler()])
     p = argparse.ArgumentParser(description="MRV3D — agente local de monitoramento de impressoras (somente leitura)")

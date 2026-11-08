@@ -19,6 +19,9 @@ Passo a passo
 3. Adicione as impressoras:
    Bambu Lab:  python3 mrv3d_agente.py adicionar bambu --nome "P1S 1" --ip 192.168.0.50 --serial NUMERO_DE_SERIE --codigo CODIGO_LAN
                (IP e código de acesso: tela da impressora > Configurações > WLAN. Use "descobrir" para achar o IP e o número de série.)
+               O agente registra o certificado da impressora nesse momento e depois recusa outro certificado
+               (assim ninguém na rede se passa pela impressora para ler o código). Se trocar a impressora ou o
+               firmware mudar o certificado, rode o comando "adicionar" de novo.
    Klipper:    python3 mrv3d_agente.py adicionar moonraker --nome "Voron" --ip 192.168.0.60
    OctoPrint:  python3 mrv3d_agente.py adicionar octoprint --nome "Ender" --ip 192.168.0.70 --api-key CHAVE
 4. python3 mrv3d_agente.py testar

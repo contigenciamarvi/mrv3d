@@ -168,3 +168,14 @@ test("G-code sem metadados e detecção de STL/STEP/OBJ", () => {
   assert.equal(detectarTipo(new TextEncoder().encode("v 0 0 0\nv 1 0 0\nf 1 2 3\n"), 30), "obj");
   assert.equal(detectarTipo(new TextEncoder().encode("olá mundo"), 9), "desconhecido");
 });
+
+test("arquivo malicioso não trava a leitura (sem retrocesso quadrático)", () => {
+  const inicio = Date.now();
+  const longo = "; " + "a ".repeat(1_000_000) + "\nG1 X1\n";
+  lerGcode(longo);
+  const semFechar = "<config>" + '<object id="1">'.repeat(200_000) + "<plate>".repeat(100_000) + "</config>";
+  const zip = zipSync({ "Metadata/model_settings.config": strToU8(semFechar), "Metadata/slice_info.config": strToU8("<plate>".repeat(300_000)),
+    "Metadata/project_settings.config": strToU8("x".repeat(3_000_000)), "3D/3dmodel.model": strToU8("<model/>") }, { level: 0 });
+  lerTresmf(zip, "ataque.3mf");
+  assert.ok(Date.now() - inicio < 3000, `levou ${Date.now() - inicio} ms`);
+});

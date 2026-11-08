@@ -17,12 +17,24 @@ export const LICENCAS: Record<string, string> = {
 export const ORIGENS: Record<string, string> = { upload: "Importado manualmente", makerworld: "Modelo público (MakerWorld)", sincronizado: "Sincronizado da conta" };
 /** licença escrita no 3MF → código do sistema */
 export function licencaDoArquivo(l: string | null): string | null {
-  if (!l) return null;
-  const s = l.toLowerCase().replace(/[\s-]+/g, "_");
-  if (/standard_digital/.test(s)) return "sdfl";
-  if (/cc0|public_domain|dom[ií]nio/.test(s)) return "cc0";
-  for (const k of ["cc_by_nc_sa", "cc_by_nc_nd", "cc_by_nc", "cc_by_sa", "cc_by_nd", "cc_by"]) if (s.includes(k)) return k;
+  if (!l || !l.trim()) return null;
+  const s = l.toLowerCase().replace(/[^a-z0-9í]+/g, "_");
+  const tem = (re: RegExp) => re.test("_" + s + "_");
+  if (tem(/standard_digital|_sdfl_/)) return "sdfl";
+  if (tem(/_cc0_|public_domain|dom[ií]nio/)) return "cc0";
+  const nc = tem(/_nc_|noncommercial|non_commercial|n[aã]o_comercial/);
+  const nd = tem(/_nd_|noderiv|no_deriv/);
+  const sa = tem(/_sa_|sharealike|share_alike/);
+  const by = tem(/_by_|attribution/) || nc || nd || sa;
+  if (nc) return nd ? "cc_by_nc_nd" : sa ? "cc_by_nc_sa" : "cc_by_nc";
+  if (by) return nd ? "cc_by_nd" : sa ? "cc_by_sa" : "cc_by";
   return "outra";
+}
+/** Uso comercial que o banco vai calcular para a licença (o banco é quem decide). */
+export function usoComercial(licenca: string | null): "permitido" | "proibido" | "verificar" {
+  if (licenca && ["propria", "cc0", "cc_by", "cc_by_sa", "cc_by_nd", "licenca_comercial"].includes(licenca)) return "permitido";
+  if (licenca && ["cc_by_nc", "cc_by_nc_sa", "cc_by_nc_nd", "sdfl"].includes(licenca)) return "proibido";
+  return "verificar";
 }
 
 /** Salva o arquivo importado na biblioteca da empresa. Não duplica (mesmo arquivo = mesmo projeto). */

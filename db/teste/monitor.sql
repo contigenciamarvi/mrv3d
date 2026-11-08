@@ -36,7 +36,8 @@ set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-000
 update public.impressoras set conexao_tipo = 'bambu_lan', dispositivo_id = '01P00A123456789' where id = (select v from mo where k = 'imp');
 reset role; insert into public.impressoras(empresa_id, nome) values ((select v from mo where k = 'eb'), 'P1S da B');
 set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
-select pg_temp.falha($$update public.impressoras set conexao_tipo = 'bambu_lan', dispositivo_id = '01p00a123456789' where nome = 'P1S da B'$$, 'MON mesmo número de série em duas empresas', 'outra conta');
+update public.impressoras set conexao_tipo = 'bambu_lan', dispositivo_id = '01p00a123456789' where nome = 'P1S da B';
+select pg_temp.ok((select count(*) = 1 from public.impressoras where nome = 'P1S da B' and dispositivo_id is not null), 'MON outra empresa não bloqueia o número de série');
 
 -- 4. telemetria + eventos (simulados)
 set role anon; reset request.jwt.claim.sub;
@@ -47,6 +48,7 @@ select pg_temp.ok((select (public.agente_reportar((select t from mt where k = 't
    jsonb_build_object('tipo_conexao', 'moonraker', 'dispositivo_id', 'voron-24', 'nome', 'Voron'))))->>'eventos_novos') = '2'), 'MON eventos recebidos');
 reset role;
 select pg_temp.ok((select estado = 'imprimindo' and progresso = 40 and temp_bico = 220 and temp_mesa is null from public.impressora_telemetria where impressora_id = (select v from mo where k = 'imp')), 'MON telemetria normalizada (valor fora da faixa descartado)');
+select pg_temp.ok((select not exists (select 1 from public.impressora_telemetria t join public.impressoras i on i.id = t.impressora_id where i.nome = 'P1S da B')), 'MON telemetria do agente de A não vai para a impressora de B com o mesmo número');
 select pg_temp.ok((select dispositivos_detectados->0->>'dispositivo_id' = 'voron-24' from public.agentes_locais where nome = 'PC da oficina'), 'MON impressora desconhecida aparece como detectada');
 select pg_temp.ok((select count(*) = 1 and bool_and(status = 'imprimindo' and ordem_id is null) from public.impressora_trabalhos where impressora_id = (select v from mo where k = 'imp')), 'MON trabalho detectado, sem vínculo automático');
 -- 11. eventos duplicados (reenvio da fila offline)
@@ -109,6 +111,17 @@ set role anon;
 select pg_temp.ok((select (public.agente_reportar((select t from mt where k = 'tok'), jsonb_build_object('eventos', jsonb_build_array(
   pg_temp.ev('impressao_iniciada', (now() + interval '1 day')::text, 'futuro', 'x'), pg_temp.ev('apagar_tudo', now()::text, 'x', 'x'),
   jsonb_build_object('id', gen_random_uuid(), 'tipo_conexao', 'bambu_lan', 'dispositivo_id', 'SERIAL-DA-B', 'tipo', 'conectada', 'em', now()::text)))))->>'eventos_novos' = '0'), 'MON eventos futuros, desconhecidos ou de outra impressora são ignorados');
+-- evento malformado não derruba o envio (senão a fila do agente travaria)
+reset role; update public.agentes_locais set ultimo_contato = now() - interval '1 minute';
+set role anon;
+insert into mt select 'rob', public.agente_reportar((select t from mt where k = 'tok'), jsonb_build_object('eventos', jsonb_build_array(
+  pg_temp.ev('conectada', now()::text, null, null) - 'id',
+  pg_temp.ev('conectada', now()::text, null, null) || '{"id": "------------------------------------"}',
+  pg_temp.ev('impressao_iniciada', (now() - interval '10 minutes')::text, 'job-3', 'robusto.gcode.3mf'),
+  pg_temp.ev('impressao_concluida', now()::text, 'job-3', 'robusto.gcode.3mf', '{"decorrido_s": 590.6}'))))::text;
+reset role;
+select pg_temp.ok((select (t::jsonb->>'eventos_novos') = '2' from mt where k = 'rob')
+  and (select status = 'concluido' and duracao_s = 591 from public.impressora_trabalhos where chave = 'job-3'), 'MON evento malformado é descartado e os válidos entram (duração com decimais)');
 
 -- 4/21. isolamento e privacidade
 set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
@@ -119,6 +132,11 @@ select pg_temp.falha($$select * from public.admin_uso_empresas()$$, 'MON métric
 reset role; update public.planos set limite_agentes = 1;
 set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 select pg_temp.falha($$select public.criar_pareamento((select v from mo where k = 'ea'), 'Segundo PC')$$, 'MON limite de agentes do plano', 'plano');
+-- código gerado antes de baixar o limite também respeita o plano no pareamento
+reset role;
+insert into public.agente_pareamentos(empresa_id, nome, codigo_hash, expira_em) values ((select v from mo where k = 'ea'), 'antigo', encode(extensions.digest('YYYYY-YYYYY', 'sha256'), 'hex'), now() + interval '10 minutes');
+set role anon; reset request.jwt.claim.sub;
+select pg_temp.falha($$select public.agente_parear('YYYYY-YYYYY', '{}')$$, 'MON limite de agentes vale também no pareamento', 'plano');
 reset role; update public.planos set limite_agentes = null, limite_impressoras_conectadas = 1;
 insert into public.impressoras(empresa_id, nome) values ((select v from mo where k = 'ea'), 'Klipper');
 set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
@@ -136,4 +154,12 @@ reset role; update public.agentes_locais set ultimo_contato = now() - interval '
 set role anon;
 select pg_temp.falha($$select public.agente_reportar((select t from mt where k = 'tok'), '{}')$$, 'MON agente revogado não envia', 'revogado');
 reset role;
+-- desconectar a integração revoga os agentes (os códigos LAN ficam no computador do agente)
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+reset role; update public.planos set limite_agentes = null; update public.agentes_locais set ativo = true, revogado_em = null where nome = 'PC da oficina';
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select public.desconectar_integracao((select v from mo where k = 'ea'), 'bambu_lab');
+reset role;
+select pg_temp.ok((select count(*) = 0 from public.agentes_locais where empresa_id = (select v from mo where k = 'ea') and ativo)
+  and (select count(*) = 0 from public.agente_pareamentos where empresa_id = (select v from mo where k = 'ea') and usado_em is null and expira_em > now()), 'MON desconectar integração revoga agentes e códigos abertos');
 \echo MONITORAMENTO OK

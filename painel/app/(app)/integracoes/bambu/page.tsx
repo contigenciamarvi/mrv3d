@@ -67,7 +67,7 @@ function Conta() {
         </div>
       </Card>
       <Confirmar aberto={desc} titulo="Desconectar Bambu Lab" perigo confirmar="Desconectar" onCancel={() => setDesc(false)}
-        texto="Exclui credenciais guardadas, tira as impressoras Bambu Lab do monitoramento e limpa o estado atual. A biblioteca de projetos e o histórico continuam. Os agentes não são revogados (use Configurações para isso)."
+        texto="Exclui as credenciais guardadas, tira as impressoras Bambu Lab do monitoramento, limpa o estado atual e revoga todos os agentes locais da empresa (as impressoras Klipper/OctoPrint ligadas a eles também param de enviar dados até você parear de novo). No computador do agente, apague a pasta de configuração para remover os códigos de acesso LAN. A biblioteca de projetos e o histórico continuam."
         onOk={async () => { try { await rpc("desconectar_integracao", { p_empresa: app.empresa.id, p_provedor: "bambu_lab" }); toast("Integração desconectada"); setDesc(false); recarregar(); } catch (e) { erro(e); } }} />
     </div>
   );

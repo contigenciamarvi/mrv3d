@@ -69,7 +69,9 @@ create table if not exists public.integracao_eventos (
 );
 create index if not exists integracao_eventos_idx on public.integracao_eventos(empresa_id, id desc);
 alter table public.integracao_eventos enable row level security;
-create policy integracao_eventos_ler on public.integracao_eventos for select using (private.tem_permissao(empresa_id, 'integracoes_config') or private.tem_permissao(empresa_id, 'produtos_ver'));
+-- eventos de conexão (agentes, máquinas) só para quem configura integrações; o resto (biblioteca) para quem vê produtos
+create policy integracao_eventos_ler on public.integracao_eventos for select using (private.tem_permissao(empresa_id, 'integracoes_config')
+  or (tipo not in ('conexao','desconexao','agente') and private.tem_permissao(empresa_id, 'produtos_ver')));
 
 create or replace function private.registrar_evento(p_empresa uuid, p_tipo text, p_msg text, p_dados jsonb) returns void
 language sql security definer set search_path = '' as $$
@@ -158,6 +160,10 @@ begin
          or new.created_by is distinct from old.created_by then
         raise exception 'Arquivo e origem do projeto não mudam: importe uma nova versão';
       end if;
+      -- liberar ou trocar a licença decide se o modelo pode ser vendido: só dono/admin
+      if new.licenca is distinct from old.licenca and not private.is_admin(new.empresa_id) then
+        raise exception 'Só o dono ou um administrador pode alterar a licença do projeto';
+      end if;
     end if;
     if new.origem = 'makerworld' and new.makerworld_url is null then raise exception 'Informe o link do modelo no MakerWorld'; end if;
   end if;
@@ -193,10 +199,15 @@ begin
   if tg_op = 'INSERT' then
     perform private.registrar_evento(new.empresa_id, 'importacao',
       case new.origem when 'makerworld' then 'Referência do MakerWorld: ' when 'sincronizado' then 'Sincronizado: ' else 'Importado: ' end || new.nome,
-      jsonb_build_object('projeto_id', new.id, 'origem', new.origem, 'formato', new.formato, 'arquivo', new.arquivo_nome));
+      jsonb_build_object('projeto_id', new.id, 'origem', new.origem, 'formato', new.formato, 'arquivo', new.arquivo_nome, 'licenca', new.licenca));
   elsif tg_op = 'DELETE' then
     perform private.registrar_evento(old.empresa_id, 'exclusao', 'Projeto excluído: ' || old.nome, jsonb_build_object('projeto_id', old.id));
-  elsif (to_jsonb(new) - array['updated_at']) <> (to_jsonb(old) - array['updated_at']) then
+  elsif new.licenca is distinct from old.licenca then
+    perform private.registrar_evento(new.empresa_id, 'atualizacao', 'Licença alterada: ' || new.nome || ' (' || coalesce(old.licenca, 'não informada') || ' → ' || coalesce(new.licenca, 'não informada') || ')',
+      jsonb_build_object('projeto_id', new.id, 'licenca_anterior', old.licenca, 'licenca_nova', new.licenca, 'por', (select auth.uid())));
+  elsif (to_jsonb(new) - array['updated_at']) <> (to_jsonb(old) - array['updated_at'])
+        and not exists (select 1 from public.integracao_eventos where empresa_id = new.empresa_id and tipo = 'atualizacao' and created_at > now() - interval '1 minute'
+                         and dados->>'projeto_id' = new.id::text and dados->>'licenca_nova' is null) then  -- edições seguidas: um registro por minuto
     perform private.registrar_evento(new.empresa_id, 'atualizacao', 'Projeto atualizado: ' || new.nome, jsonb_build_object('projeto_id', new.id));
   end if;
   return null;
@@ -224,6 +235,18 @@ create policy vinc_excluir on public.projeto_vinculos for delete using (private.
 create trigger trg_mesma_empresa before insert or update on public.projeto_vinculos for each row execute function private.checar_mesma_empresa(
   'projeto_id:projetos_3d', 'produto_id:produtos', 'orcamento_id:orcamentos', 'pedido_id:pedidos', 'ordem_id:ordens_producao');
 
+-- uso comercial só com licença que permite: "proibido" e "verificar" (licença desconhecida) bloqueiam
+create or replace function private.exigir_uso_comercial(p public.projetos_3d) returns void
+language plpgsql security definer set search_path = '' as $$
+begin
+  if p.uso_comercial = 'proibido' then
+    raise exception 'A licença deste modelo (%) não permite uso comercial. Compre uma licença comercial do autor e atualize a licença do projeto.', p.licenca;
+  elsif p.uso_comercial is distinct from 'permitido' then
+    raise exception 'A licença do modelo "%" não foi confirmada. Informe a licença no projeto antes de orçar ou produzir.', p.nome;
+  end if;
+end; $$;
+revoke all on function private.exigir_uso_comercial(public.projetos_3d) from public, anon, authenticated;
+
 create or replace function private.projeto_carregar(p_projeto uuid, p_uso_comercial boolean) returns public.projetos_3d
 language plpgsql security definer set search_path = '' as $$
 declare p public.projetos_3d;
@@ -232,9 +255,7 @@ begin
   if p.id is null or not (private.tem_permissao(p.empresa_id, 'produtos_ver') or private.tem_permissao(p.empresa_id, 'orcamentos_criar') or private.tem_permissao(p.empresa_id, 'producao_gerenciar')) then
     raise exception 'Projeto não encontrado';
   end if;
-  if p_uso_comercial and p.uso_comercial = 'proibido' then
-    raise exception 'A licença deste modelo (%) não permite uso comercial. Compre uma licença comercial do autor e atualize a licença do projeto.', p.licenca;
-  end if;
+  if p_uso_comercial then perform private.exigir_uso_comercial(p); end if;
   return p;
 end; $$;
 
@@ -243,7 +264,7 @@ create or replace function public.projeto_vincular(p_projeto uuid, p_tipo text, 
 returns void language plpgsql security definer set search_path = '' as $$
 declare p public.projetos_3d;
 begin
-  p := private.projeto_carregar(p_projeto, p_tipo <> 'ordem');
+  p := private.projeto_carregar(p_projeto, true);
   if p_tipo = 'produto' then
     if not private.pode(p.empresa_id, 'produtos_editar') then raise exception 'Sem permissão para editar produtos'; end if;
     update public.projetos_3d set produto_id = p_ref where id = p.id;
@@ -469,8 +490,11 @@ end; $$;
 -- vínculo automático quando um item de orçamento usa um projeto da biblioteca
 create or replace function private.item_vincular_projeto() returns trigger
 language plpgsql security definer set search_path = '' as $$
+declare p public.projetos_3d;
 begin
   if new.projeto_id is not null and (tg_op = 'INSERT' or new.projeto_id is distinct from old.projeto_id) then
+    select * into p from public.projetos_3d where id = new.projeto_id;
+    perform private.exigir_uso_comercial(p);
     insert into public.projeto_vinculos(empresa_id, projeto_id, orcamento_id) values (new.empresa_id, new.projeto_id, new.orcamento_id) on conflict do nothing;
   end if;
   return null;
@@ -523,6 +547,8 @@ begin
   if new.visualizado_em is distinct from old.visualizado_em and coalesce(current_setting('app.orcamento_rpc', true), '') <> '1' and (select auth.uid()) is not null then
     raise exception 'A visualização é registrada pelo link do comprador';
   end if;
+  -- nova revisão enviada: a visualização anterior era de outra versão
+  if new.revisao > old.revisao then new.visualizado_em := null; end if;
   return new;
 end; $$;
 drop trigger if exists trg_orc_visualizado on public.orcamentos;

@@ -11,7 +11,7 @@ import { Button, Card, CardTitle, Field, Input, Select, Grid, Table, Td, Loading
 type Gasto = { id: string; descricao: string; categoria: string; valor: number; data: string; material_id: string | null };
 const vazio = () => ({ tipo: "filamento", nome: "", detalhe: "", quantidade: "", unidade: "kg", valor: "", data: hojeISO(), minimo: "", lancar: true });
 
-export default function Compras() { return <Exige perm={["compras_gerenciar", "materia_movimentar"]}><Conteudo /></Exige>; }
+export default function Compras() { return <Exige perm="compras_gerenciar"><Conteudo /></Exige>; }
 
 function Conteudo() {
   const app = useApp();

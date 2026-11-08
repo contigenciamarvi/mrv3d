@@ -75,6 +75,8 @@ create table if not exists public.orcamento_itens (
   margem_pct numeric(5,2) check (margem_pct >= 0 and margem_pct < 100),
   impostos_pct numeric(5,2) check (impostos_pct >= 0 and impostos_pct < 100),
   taxas_pct numeric(5,2) check (taxas_pct >= 0 and taxas_pct < 100),
+  -- percentuais efetivamente usados (padrões da empresa quando o item não informa)
+  margem_efetiva numeric(5,2), impostos_efetivo numeric(5,2), taxas_efetiva numeric(5,2), desperdicio_efetivo numeric(5,2), preco_tabela numeric(12,2),
   preco_manual numeric(12,2) check (preco_manual >= 0),
   arquivo_path text, arquivo_nome text, volume_cm3 numeric(12,3) check (volume_cm3 >= 0),
   -- parâmetros usados no cálculo (congelados no item)
@@ -132,12 +134,18 @@ begin
         or new.aprovado_por is distinct from old.aprovado_por) then
       raise exception 'Use os botões Enviar, Aprovar, Rejeitar ou Converter para mudar a situação do orçamento';
     end if;
-    -- aprovado/convertido/cancelado: valores congelados
-    if old.status in ('aprovado','convertido','cancelado') and not v_rpc and
-       (new.desconto_valor <> old.desconto_valor or new.frete_cobrado <> old.frete_cobrado or new.cliente_id is distinct from old.cliente_id
-        or new.titulo <> old.titulo or new.validade is distinct from old.validade or new.prazo_entrega_dias is distinct from old.prazo_entrega_dias) then
-      raise exception 'Orçamento %: valores preservados. Duplique para criar um novo.', old.status;
+    -- aprovado/convertido/cancelado: tudo congelado (só textos livres podem mudar fora das funções de fluxo)
+    if old.status in ('aprovado','convertido','cancelado') then
+      if not v_rpc and (to_jsonb(new) - array['descricao','observacoes','condicoes','updated_at']) <> (to_jsonb(old) - array['descricao','observacoes','condicoes','updated_at']) then
+        raise exception 'Orçamento %: valores preservados. Duplique para criar um novo.', old.status;
+      end if;
+      new.subtotal := old.subtotal; new.custo_total := old.custo_total; new.impostos_total := old.impostos_total; new.taxas_total := old.taxas_total;
+      new.total := old.total; new.lucro_estimado := old.lucro_estimado; new.desconto_valor := old.desconto_valor; new.frete_cobrado := old.frete_cobrado;
+      return new;
     end if;
+  end if;
+  if new.oportunidade_id is not null and not exists (select 1 from public.crm_oportunidades where id = new.oportunidade_id and empresa_id = new.empresa_id) then
+    raise exception 'Oportunidade não encontrada';
   end if;
   if new.cliente_id is not null and not exists (select 1 from public.clientes where id = new.cliente_id and empresa_id = new.empresa_id) then
     raise exception 'Cliente não encontrado';
@@ -147,13 +155,12 @@ begin
   select coalesce(sum(preco_total), 0), coalesce(sum(custo_total), 0), coalesce(sum(impostos_valor), 0), coalesce(sum(taxas_valor), 0), coalesce(sum(lucro), 0)
     into v_sub, v_custo, v_imp, v_tax, v_lucro
     from public.orcamento_itens where orcamento_id = new.id;
-  if tg_op = 'UPDATE' and old.status in ('aprovado','convertido','cancelado') then
-    return new; -- não recalcula valores aprovados
-  end if;
   if new.desconto_valor > v_sub then raise exception 'O desconto (R$ %) é maior que o subtotal (R$ %)', new.desconto_valor, v_sub; end if;
   -- desconto acima do limite livre exige permissão de aprovar descontos
-  if new.desconto_valor > 0 and (tg_op = 'INSERT' or new.desconto_valor > old.desconto_valor)
-     and v_sub > 0 and new.desconto_valor / v_sub * 100 > coalesce(c.desconto_livre_pct, 0)
+  -- vale também quando o subtotal cai depois (ex.: reduzir quantidade)
+  if new.desconto_valor > 0 and (tg_op = 'INSERT' or new.desconto_valor <> old.desconto_valor or v_sub <> old.subtotal)
+     and (select auth.uid()) is not null
+     and (v_sub = 0 or new.desconto_valor / v_sub * 100 > coalesce(c.desconto_livre_pct, 0))
      and not private.tem_permissao(new.empresa_id, 'descontos_aprovar') then
     raise exception 'Desconto acima de % %% precisa ser aprovado por quem tem permissão de aprovar descontos', coalesce(c.desconto_livre_pct, 0);
   end if;
@@ -173,14 +180,20 @@ create trigger trg_orcamento_upd before update on public.orcamentos for each row
 create or replace function private.calcular_item_orcamento() returns trigger
 language plpgsql security definer set search_path = '' as $$
 declare o public.orcamentos; c public.empresa_config; m public.materiais; i public.impressoras; cli public.clientes; pr public.produtos;
-        v_margem numeric; v_imp numeric; v_tax numeric; v_desp numeric; v_den numeric;
+        v_margem numeric; v_imp numeric; v_tax numeric; v_desp numeric; v_den numeric; v_margem_padrao numeric; v_den_padrao numeric;
 begin
+  if tg_op = 'UPDATE' and (new.orcamento_id <> old.orcamento_id or new.empresa_id <> old.empresa_id) then
+    raise exception 'Um item não pode mudar de orçamento';
+  end if;
   select * into o from public.orcamentos where id = coalesce(new.orcamento_id, old.orcamento_id);
-  if o.status in ('aprovado','convertido','cancelado') and current_setting('app.orcamento_rpc', true) is distinct from '1' then
+  if o.status in ('aprovado','convertido','cancelado') and coalesce(current_setting('app.orcamento_rpc', true), '') <> '1' then
     raise exception 'Orçamento %: os itens não podem mais ser alterados. Duplique para criar um novo.', o.status;
   end if;
   if tg_op = 'DELETE' then return old; end if;
   if new.empresa_id <> o.empresa_id then raise exception 'Item de outra empresa'; end if;
+  if new.variante_id is not null and not exists (select 1 from public.produto_variantes where id = new.variante_id and empresa_id = new.empresa_id) then
+    raise exception 'Variação não encontrada';
+  end if;
 
   select * into c from public.empresa_config where empresa_id = new.empresa_id;
   if new.material_id is not null then
@@ -204,11 +217,12 @@ begin
   new.custo_hora_maquina := coalesce(i.custo_hora, 0);
   new.mao_obra_hora := coalesce(c.mao_obra_hora, 0);
   -- margem: item > cliente > produto > material > configuração
-  v_margem := coalesce(new.margem_pct, cli.margem_pct, pr.margem_pct, m.margem_pct, c.margem_pct, 0);
+  v_margem_padrao := coalesce(cli.margem_pct, pr.margem_pct, m.margem_pct, c.margem_pct, 0);
+  v_margem := coalesce(new.margem_pct, v_margem_padrao);
   v_imp := coalesce(new.impostos_pct, c.impostos_pct, 0);
   v_tax := coalesce(new.taxas_pct, c.taxas_pct, 0);
   v_desp := coalesce(new.desperdicio_pct, c.desperdicio_pct, 0);
-  new.margem_pct := v_margem; new.impostos_pct := v_imp; new.taxas_pct := v_tax; new.desperdicio_pct := v_desp;
+  new.margem_efetiva := v_margem; new.impostos_efetivo := v_imp; new.taxas_efetiva := v_tax; new.desperdicio_efetivo := v_desp;
   v_den := 1 - (v_margem + v_imp + v_tax) / 100;
   if v_den <= 0 then raise exception 'A soma de margem, impostos e taxas precisa ser menor que 100%%'; end if;
 
@@ -226,6 +240,17 @@ begin
   if new.desconto_terceiros > new.custo_unitario then raise exception 'Desconto de terceiros maior que o custo do item'; end if;
   -- Preço = (custo − descontos de terceiros) / (1 − margem − impostos − taxas)
   new.preco_unitario := coalesce(new.preco_manual, round((new.custo_unitario - new.desconto_terceiros) / v_den, 2));
+  -- preço de tabela: mesmas entradas, mas com os percentuais e perdas padrão e sem descontos/preço manual
+  v_den_padrao := 1 - (v_margem_padrao + coalesce(c.impostos_pct, 0) + coalesce(c.taxas_pct, 0)) / 100;
+  new.preco_tabela := round((new.custo_unitario - new.custo_material + new.peso_g / 1000 * new.preco_kg * (1 + coalesce(c.desperdicio_pct, 0) / 100)) / greatest(v_den_padrao, 0.01), 2);
+  -- vender abaixo da tabela (margem/impostos/taxas/perdas menores, desconto de terceiros ou preço manual) exige permissão
+  if new.preco_unitario < new.preco_tabela - 0.005 and (select auth.uid()) is not null
+     and (tg_op = 'INSERT' or new.preco_manual is distinct from old.preco_manual or new.margem_pct is distinct from old.margem_pct
+          or new.impostos_pct is distinct from old.impostos_pct or new.taxas_pct is distinct from old.taxas_pct
+          or new.desperdicio_pct is distinct from old.desperdicio_pct or new.desconto_terceiros is distinct from old.desconto_terceiros)
+     and not private.tem_permissao(new.empresa_id, 'descontos_aprovar') then
+    raise exception 'Preço de % abaixo do calculado (%) precisa de quem pode aprovar descontos', new.preco_unitario, new.preco_tabela;
+  end if;
   new.preco_total := round(new.preco_unitario * new.quantidade, 2);
   new.custo_total := round((new.custo_unitario - new.desconto_terceiros) * new.quantidade, 2);
   new.impostos_valor := round(new.preco_total * v_imp / 100, 2);
@@ -274,7 +299,7 @@ begin
   perform private.snapshot_orcamento(o.id, 'enviado');
   if o.oportunidade_id is not null then
     update public.crm_oportunidades set etapa = 'orcamento_enviado', valor_estimado = (select total from public.orcamentos where id = o.id)
-     where id = o.oportunidade_id and etapa not in ('aprovado','perdido');
+     where id = o.oportunidade_id and empresa_id = o.empresa_id and etapa not in ('aprovado','perdido');
   end if;
   perform set_config('app.orcamento_rpc', '0', true);
   return v_token;
@@ -289,6 +314,9 @@ begin
   if o.status not in ('rascunho','enviado') then raise exception 'Orçamento já está %', o.status; end if;
   if not exists (select 1 from public.orcamento_itens where orcamento_id = o.id) then raise exception 'Orçamento sem itens'; end if;
   if not p_aprovar and length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Informe o motivo da rejeição'; end if;
+  if p_aprovar and not private.tem_permissao(o.empresa_id, 'descontos_aprovar') then
+    raise exception 'Aprovar internamente exige a permissão de aprovar descontos. Envie o link para o cliente aprovar.';
+  end if;
   select email into v_nome from auth.users where id = (select auth.uid());
   perform set_config('app.orcamento_rpc', '1', true);
   update public.orcamentos set status = case when p_aprovar then 'aprovado' else 'rejeitado' end::public.status_orcamento,
@@ -299,7 +327,7 @@ begin
   if o.oportunidade_id is not null then
     update public.crm_oportunidades set etapa = case when p_aprovar then 'aprovado' else 'perdido' end::public.etapa_crm,
            motivo_perda = case when not p_aprovar then trim(p_motivo) end
-     where id = o.oportunidade_id;
+     where id = o.oportunidade_id and empresa_id = o.empresa_id;
   end if;
   perform set_config('app.orcamento_rpc', '0', true);
 end; $$;
@@ -377,7 +405,7 @@ begin
     'empresa', jsonb_build_object('nome', e.nome, 'whatsapp', e.whatsapp, 'email', e.email, 'cidade', e.cidade, 'uf', e.uf),
     'orcamento', jsonb_build_object('numero', o.numero, 'prefixo', (select prefixo_orcamento from public.empresa_config where empresa_id = o.empresa_id),
         'titulo', o.titulo, 'descricao', o.descricao, 'status', o.status,
-        'expirado', (o.status = 'enviado' and o.validade < current_date), 'validade', o.validade, 'prazo_entrega_dias', o.prazo_entrega_dias,
+        'expirado', (o.status = 'enviado' and o.validade < (now() at time zone 'America/Sao_Paulo')::date), 'validade', o.validade, 'prazo_entrega_dias', o.prazo_entrega_dias,
         'subtotal', o.subtotal, 'desconto', o.desconto_valor, 'frete', o.frete_cobrado, 'total', o.total,
         'observacoes', o.observacoes, 'condicoes', o.condicoes, 'revisao', o.revisao, 'enviado_em', o.enviado_em,
         'respondido_em', o.respondido_em, 'cliente', (select nome from public.clientes where id = o.cliente_id)),
@@ -394,7 +422,7 @@ begin
   select * into o from public.orcamentos where token_publico = p_token for update;
   if o.id is null then raise exception 'Orçamento não encontrado'; end if;
   if o.status <> 'enviado' then raise exception 'Este orçamento já foi respondido ou não está disponível'; end if;
-  if o.validade < current_date then raise exception 'Este orçamento venceu em %. Peça um novo à empresa.', to_char(o.validade, 'DD/MM/YYYY'); end if;
+  if o.validade < (now() at time zone 'America/Sao_Paulo')::date then raise exception 'Este orçamento venceu em %. Peça um novo à empresa.', to_char(o.validade, 'DD/MM/YYYY'); end if;
   if not exists (select 1 from public.empresas where id = o.empresa_id and status not in ('suspensa','cancelada')) then raise exception 'Empresa indisponível no momento'; end if;
   if length(trim(coalesce(p_nome, ''))) < 2 then raise exception 'Informe seu nome'; end if;
   if not p_aprovar and length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Conte o motivo para a empresa'; end if;
@@ -407,7 +435,7 @@ begin
   if o.oportunidade_id is not null then
     update public.crm_oportunidades set etapa = case when p_aprovar then 'aprovado' else 'perdido' end::public.etapa_crm,
            motivo_perda = case when not p_aprovar then left(trim(p_motivo), 1000) end
-     where id = o.oportunidade_id;
+     where id = o.oportunidade_id and empresa_id = o.empresa_id;
   end if;
   perform set_config('app.orcamento_rpc', '0', true);
   return case when p_aprovar then 'aprovado' else 'rejeitado' end;

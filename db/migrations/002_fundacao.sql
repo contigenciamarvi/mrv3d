@@ -214,9 +214,13 @@ declare v_user uuid;
 begin
   if not private.pode(p_empresa, 'usuarios_admin') then raise exception 'Você não tem permissão para administrar usuários'; end if;
   if p_papel = 'dono' then raise exception 'Só existe um proprietário por empresa'; end if;
+  if p_papel = 'admin' and not private.is_admin(p_empresa) then raise exception 'Só o proprietário ou um administrador pode criar administradores'; end if;
   select id into v_user from auth.users where lower(email) = lower(trim(p_email));
   if v_user is null then raise exception 'Nenhuma conta com esse e-mail. Peça para a pessoa criar a conta em mrv3dsolutions.tech e tente de novo.'; end if;
   if exists (select 1 from public.membros where empresa_id = p_empresa and user_id = v_user) then
+    if exists (select 1 from public.membros where empresa_id = p_empresa and user_id = v_user and papel in ('dono','admin')) and not private.is_admin(p_empresa) then
+      raise exception 'Só o proprietário ou um administrador pode alterar um administrador';
+    end if;
     update public.membros set ativo = true, papel = p_papel where empresa_id = p_empresa and user_id = v_user and papel <> 'dono';
   else
     insert into public.membros(empresa_id, user_id, papel) values (p_empresa, v_user, p_papel);
@@ -233,6 +237,13 @@ begin
   if v_atual = 'dono' then raise exception 'O proprietário não pode ser alterado'; end if;
   if p_papel = 'dono' then raise exception 'Só existe um proprietário por empresa'; end if;
   if p_user = (select auth.uid()) then raise exception 'Você não pode alterar o seu próprio acesso'; end if;
+  if (v_atual = 'admin' or p_papel = 'admin') and not private.is_admin(p_empresa) then
+    raise exception 'Só o proprietário ou um administrador pode criar ou alterar administradores';
+  end if;
+  -- ninguém concede uma permissão que não tem
+  if exists (select 1 from unnest(coalesce(p_extra, '{}')) x where not private.tem_permissao(p_empresa, x)) then
+    raise exception 'Você só pode conceder permissões que você mesmo tem';
+  end if;
   update public.membros set papel = p_papel, permissoes_extra = coalesce(p_extra, '{}'), permissoes_removidas = coalesce(p_removidas, '{}'), ativo = coalesce(p_ativo, ativo)
    where empresa_id = p_empresa and user_id = p_user;
 end; $$;
@@ -243,6 +254,9 @@ begin
   if not private.pode(p_empresa, 'usuarios_admin') then raise exception 'Você não tem permissão para administrar usuários'; end if;
   if exists (select 1 from public.membros where empresa_id = p_empresa and user_id = p_user and papel = 'dono') then raise exception 'O proprietário não pode ser removido'; end if;
   if p_user = (select auth.uid()) then raise exception 'Você não pode remover a si mesmo'; end if;
+  if exists (select 1 from public.membros where empresa_id = p_empresa and user_id = p_user and papel = 'admin') and not private.is_admin(p_empresa) then
+    raise exception 'Só o proprietário ou um administrador pode remover um administrador';
+  end if;
   delete from public.membros where empresa_id = p_empresa and user_id = p_user;
 end; $$;
 

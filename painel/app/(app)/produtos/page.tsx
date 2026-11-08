@@ -143,7 +143,7 @@ function Editor({ p, mats, imps, categorias, pode, verCusto, onClose, onSalvo }:
             {verCusto && <Field label="Custo padrão (R$)"><div className="flex gap-1"><Input inputMode="decimal" value={f.custo_padrao} onChange={(e) => setF({ ...f, custo_padrao: e.target.value })} />
               <Button type="button" variant="secondary" onClick={calcular} title="Calcular pela ficha técnica" aria-label="Calcular custo"><Calculator className="h-4 w-4" /></Button></div></Field>}
             <Field label="Preço de venda (R$)" hint={verCusto && precoSugerido ? `Sugerido: ${brl(precoSugerido)}` : undefined}><Input inputMode="decimal" value={f.preco_venda} onChange={(e) => setF({ ...f, preco_venda: e.target.value })} /></Field>
-            <Field label="Margem própria (%)" hint="Opcional, para orçamentos"><Input inputMode="decimal" value={f.margem_pct} onChange={(e) => setF({ ...f, margem_pct: e.target.value })} /></Field>
+            {(app.pode("descontos_aprovar") || app.pode("config_editar")) && <Field label="Margem própria (%)" hint="Opcional, para orçamentos"><Input inputMode="decimal" value={f.margem_pct} onChange={(e) => setF({ ...f, margem_pct: e.target.value })} /></Field>}
             <Field label="Situação"><Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}><option value="ativo">Ativo</option><option value="rascunho">Rascunho</option><option value="inativo">Inativo</option></Select></Field>
             {f.controla_estoque && <Field label="Estoque mínimo"><Input inputMode="decimal" value={f.estoque_minimo} onChange={(e) => setF({ ...f, estoque_minimo: e.target.value })} /></Field>}
           </Grid>

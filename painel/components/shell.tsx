@@ -35,7 +35,7 @@ const MENU: Item[] = [
   { href: "/impressoras/", label: "Impressoras 3D", icon: Printer, perm: ["impressoras_ver"], pronto: true },
   { href: "/materia-prima/", label: "Matéria-prima", icon: Boxes, perm: ["materia_ver"], pronto: true },
   { href: "/produtos/", label: "Produtos", icon: Package, perm: ["produtos_ver"], pronto: true },
-  { href: "/compras/", label: "Compras e Fornecedores", icon: Truck, perm: ["compras_gerenciar", "materia_movimentar"], pronto: true },
+  { href: "/compras/", label: "Compras e Fornecedores", icon: Truck, perm: ["compras_gerenciar"], pronto: true },
   { href: "#financeiro", label: "Financeiro", icon: Wallet, pronto: false },
   { href: "#manutencao", label: "Manutenção", icon: Wrench, pronto: false },
   { href: "#expedicao", label: "Expedição e Entregas", icon: Send, pronto: false },

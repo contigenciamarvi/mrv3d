@@ -149,7 +149,7 @@ function ClientesConteudo() {
             </Grid>
             <Grid>
               <Field label="Etiquetas" hint="Separe por vírgula: ex. revenda, cosplay"><Input value={form.etiquetas} onChange={(e) => setForm({ ...form, etiquetas: e.target.value })} list="etiquetas-cli" /></Field>
-              <Field label="Margem especial (%)" hint="Opcional. Substitui a margem padrão nos orçamentos"><Input inputMode="decimal" value={form.margem_pct} onChange={(e) => setForm({ ...form, margem_pct: e.target.value })} /></Field>
+              {(app.pode("descontos_aprovar") || app.pode("config_editar")) && <Field label="Margem especial (%)" hint="Opcional. Substitui a margem padrão nos orçamentos"><Input inputMode="decimal" value={form.margem_pct} onChange={(e) => setForm({ ...form, margem_pct: e.target.value })} /></Field>}
             </Grid>
             <datalist id="etiquetas-cli">{etiquetas.map((t) => <option key={t} value={t} />)}</datalist>
             <Field label="Observações"><Textarea value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} /></Field>

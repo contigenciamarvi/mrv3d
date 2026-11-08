@@ -216,7 +216,7 @@ function Conteudo() {
             <Field label="Peso líquido (g)" hint="Por bobina/unidade"><Input inputMode="decimal" value={form.peso_liquido_g} onChange={(e) => setForm({ ...form, peso_liquido_g: e.target.value })} placeholder="1000" /></Field>
             <Field label="Peso da bobina vazia (g)"><Input inputMode="decimal" value={form.peso_carretel_g} onChange={(e) => setForm({ ...form, peso_carretel_g: e.target.value })} /></Field>
             <Field label="Estoque mínimo"><Input inputMode="decimal" value={form.estoque_minimo} onChange={(e) => setForm({ ...form, estoque_minimo: e.target.value })} /></Field>
-            <Field label="Margem especial (%)" hint="Opcional, para orçamentos"><Input inputMode="decimal" value={form.margem_pct} onChange={(e) => setForm({ ...form, margem_pct: e.target.value })} /></Field>
+            {(app.pode("descontos_aprovar") || app.pode("config_editar")) && <Field label="Margem especial (%)" hint="Opcional, para orçamentos"><Input inputMode="decimal" value={form.margem_pct} onChange={(e) => setForm({ ...form, margem_pct: e.target.value })} /></Field>}
             <Field label="Fornecedor"><Input value={form.fornecedor} onChange={(e) => setForm({ ...form, fornecedor: e.target.value })} /></Field>
             <Field label="Lote"><Input value={form.lote} onChange={(e) => setForm({ ...form, lote: e.target.value })} /></Field>
             <Field label="Localização"><Input value={form.localizacao} onChange={(e) => setForm({ ...form, localizacao: e.target.value })} placeholder="Prateleira A2" /></Field>
@@ -239,7 +239,7 @@ function Conteudo() {
             <button key={k} type="button" onClick={() => setMov({ ...mov, tipo: k })} className={cn("h-10 rounded-lg border text-sm font-medium", mov.tipo === k ? "border-brand-600 bg-brand-50 text-brand-700 dark:bg-brand-500/10" : "border-slate-200 dark:border-slate-700")}>{v}</button>))}</div>
           <p className="text-sm text-slate-500">Físico: {num(mov.m.quantidade)} {mov.m.unidade} · disponível: {num(disp(mov.m))} {mov.m.unidade}</p>
           <Field label={mov.tipo === "ajuste" ? `Novo saldo físico (${mov.m.unidade})` : `Quantidade (${mov.m.unidade})`}><Input required inputMode="decimal" autoFocus value={mov.quantidade} onChange={(e) => setMov({ ...mov, quantidade: e.target.value })} /></Field>
-          {mov.tipo === "entrada" && verCusto && <Field label={`Custo por ${mov.m.unidade} (R$)`} hint="Atualiza o custo médio ponderado"><Input inputMode="decimal" value={mov.custo} onChange={(e) => setMov({ ...mov, custo: e.target.value })} /></Field>}
+          {mov.tipo === "entrada" && (verCusto || app.pode("compras_gerenciar")) && <Field label={`Custo por ${mov.m.unidade} (R$)`} hint="Atualiza o custo médio ponderado"><Input inputMode="decimal" value={mov.custo} onChange={(e) => setMov({ ...mov, custo: e.target.value })} /></Field>}
           <Field label={mov.tipo === "ajuste" ? "Justificativa (obrigatória)" : "Observação"}><Textarea required={mov.tipo === "ajuste"} minLength={mov.tipo === "ajuste" ? 3 : undefined} value={mov.justificativa} onChange={(e) => setMov({ ...mov, justificativa: e.target.value })} /></Field>
           <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setMov(null)}>Cancelar</Button><Button type="submit" loading={salvando}>Registrar</Button></div>
         </form>}

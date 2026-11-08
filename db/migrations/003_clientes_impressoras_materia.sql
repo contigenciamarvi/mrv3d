@@ -235,12 +235,11 @@ begin
     end if;
   elsif new.tipo = 'saida' then
     v_novo := m.quantidade - new.quantidade;
-    -- saída manual não pode consumir material reservado para produção
-    if new.reserva_id is null and new.estorno_de is null then
-      v_disp := m.quantidade - m.quantidade_reservada;
-      if new.quantidade > v_disp and not m.permite_negativo then
-        raise exception 'Disponível de "%": % % (há % reservado para produção)', m.nome, greatest(v_disp, 0), m.unidade, m.quantidade_reservada;
-      end if;
+    -- nenhuma saída pode consumir material reservado para outras produções
+    -- (o consumo de uma reserva libera a reserva antes de lançar a saída)
+    v_disp := m.quantidade - m.quantidade_reservada;
+    if new.quantidade > v_disp and not m.permite_negativo then
+      raise exception 'Disponível de "%": % % (há % reservado para produção)', m.nome, greatest(v_disp, 0), m.unidade, m.quantidade_reservada;
     end if;
   else
     if length(trim(coalesce(new.justificativa, new.observacao, ''))) < 3 then
@@ -250,7 +249,8 @@ begin
   end if;
   update public.materiais set quantidade = v_novo where id = m.id; -- trg_material_proteger barra negativo
   new.saldo_apos := v_novo;
-  if new.created_by is null then new.created_by := (select auth.uid()); end if;
+  -- quem fez é sempre o usuário logado (não dá para atribuir a outra pessoa)
+  if (select auth.uid()) is not null then new.created_by := (select auth.uid()); end if;
   return new;
 end; $$;
 create trigger trg_mov_aplicar before insert on public.movimentacoes_estoque for each row execute function public.aplicar_movimentacao();
@@ -261,8 +261,7 @@ drop policy if exists movimentacoes_estoque_excluir on public.movimentacoes_esto
 drop policy if exists movimentacoes_estoque_inserir on public.movimentacoes_estoque;
 drop policy if exists movimentacoes_estoque_ler on public.movimentacoes_estoque;
 create policy movimentacoes_estoque_ler on public.movimentacoes_estoque for select using (private.tem_permissao(empresa_id, 'materia_ver'));
-create policy movimentacoes_estoque_inserir on public.movimentacoes_estoque for insert
-  with check (private.pode(empresa_id, 'materia_movimentar') and estorno_de is null and reserva_id is null);
+-- sem INSERT direto: entradas/saídas/ajustes só pelas funções (que conferem permissão e custo)
 
 -- materiais: permissões
 drop policy if exists materiais_ler on public.materiais;
@@ -344,7 +343,10 @@ begin
   if p_tipo = 'ajuste' and length(trim(coalesce(p_justificativa, ''))) < 3 then raise exception 'Informe a justificativa do ajuste'; end if;
   perform set_config('app.mov_interna', '1', true);
   insert into public.movimentacoes_estoque(empresa_id, material_id, tipo, quantidade, custo_unitario, justificativa, observacao)
-  values (v_emp, p_material, p_tipo, p_quantidade, case when p_tipo = 'entrada' then p_custo_unitario end, nullif(trim(p_justificativa), ''),
+  values (v_emp, p_material, p_tipo, p_quantidade,
+          -- só quem compra ou vê custos informa custo (o custo médio define o preço dos orçamentos)
+          case when p_tipo = 'entrada' and (private.tem_permissao(v_emp, 'compras_gerenciar') or private.tem_permissao(v_emp, 'custos_ver')) then p_custo_unitario end,
+          nullif(trim(p_justificativa), ''),
           case p_tipo when 'entrada' then 'Entrada manual' when 'saida' then 'Saída manual' else 'Ajuste' end)
   returning * into v_mov;
   perform set_config('app.mov_interna', '0', true);
@@ -372,10 +374,19 @@ begin
   if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Informe o motivo do estorno'; end if;
   if o.tipo = 'entrada' then v_tipo := 'saida'; v_qtd := o.quantidade;
   elsif o.tipo = 'saida' then v_tipo := 'entrada'; v_qtd := o.quantidade;
-  else v_tipo := 'ajuste'; v_qtd := o.saldo_antes;
-    if v_qtd is null then raise exception 'Ajuste antigo sem saldo anterior registrado: faça um novo inventário'; end if;
+  else
+    -- ajuste é desfeito pela diferença que ele causou (não volta ao saldo absoluto, que apagaria lançamentos posteriores)
+    if o.saldo_antes is null then raise exception 'Ajuste antigo sem saldo anterior registrado: faça um novo inventário'; end if;
+    v_qtd := abs(o.saldo_apos - o.saldo_antes);
+    if v_qtd = 0 then raise exception 'Este ajuste não mudou o saldo'; end if;
+    v_tipo := case when o.saldo_apos > o.saldo_antes then 'saida' else 'entrada' end;
   end if;
   perform set_config('app.mov_interna', '1', true);
+  -- saída de bobina estornada devolve os gramas para a bobina
+  if o.bobina_id is not null and o.tipo = 'saida' then
+    update public.material_bobinas b set consumido_g = greatest(b.consumido_g - o.quantidade * coalesce(private.fator_gramas(m.unidade, m.peso_liquido_g), 0), 0)
+      from public.materiais m where b.id = o.bobina_id and m.id = o.material_id;
+  end if;
   insert into public.movimentacoes_estoque(empresa_id, material_id, tipo, quantidade, justificativa, observacao, estorno_de)
   values (o.empresa_id, o.material_id, v_tipo, v_qtd, trim(p_motivo), 'Estorno', o.id)
   returning id into v_id;
@@ -438,10 +449,12 @@ create or replace function public.reservar_materia_prima(p_material uuid, p_quan
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare m public.materiais; v_id uuid; v_g numeric; b public.material_bobinas;
 begin
-  select * into m from public.materiais where id = p_material for update;   -- bloqueio: reservas simultâneas esperam
+  select * into m from public.materiais where id = p_material;
   if m.id is null or not (private.pode(m.empresa_id, 'materia_movimentar') or private.pode(m.empresa_id, 'producao_gerenciar')) then
     raise exception 'Sem permissão para reservar matéria-prima';
   end if;
+  if p_pedido is not null and not exists (select 1 from public.pedidos where id = p_pedido and empresa_id = m.empresa_id) then raise exception 'Pedido não encontrado'; end if;
+  select * into m from public.materiais where id = p_material for update;   -- bloqueio: reservas simultâneas esperam
   if p_quantidade is null or p_quantidade <= 0 then raise exception 'Quantidade inválida'; end if;
   if p_quantidade > m.quantidade - m.quantidade_reservada and not m.permite_negativo then
     raise exception 'Disponível de "%": % % — não é possível reservar %', m.nome, greatest(m.quantidade - m.quantidade_reservada, 0), m.unidade, p_quantidade;
@@ -489,6 +502,10 @@ begin
   if r.status <> 'ativa' then raise exception 'Esta reserva já foi %', r.status; end if;
   if p_quantidade_real is null or p_quantidade_real < 0 then raise exception 'Quantidade real inválida'; end if;
   select * into m from public.materiais where id = r.material_id for update;
+  -- pode consumir a própria reserva + o que estiver livre, nunca reservas de outras produções
+  if p_quantidade_real > r.quantidade + (m.quantidade - m.quantidade_reservada) and not m.permite_negativo then
+    raise exception 'Consumo de % % passa do reservado (% %) mais o disponível (% %)', p_quantidade_real, m.unidade, r.quantidade, m.unidade, greatest(m.quantidade - m.quantidade_reservada, 0), m.unidade;
+  end if;
   perform set_config('app.mov_interna', '1', true);
   update public.materiais set quantidade_reservada = greatest(quantidade_reservada - r.quantidade, 0) where id = m.id;
   if p_quantidade_real > 0 then
@@ -543,7 +560,7 @@ create or replace function public.registrar_compra(p_empresa uuid, p_tipo public
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare v_item uuid; v_gasto uuid; v_cat public.categoria_gasto; v_saldo numeric;
 begin
-  if not (private.pode(p_empresa, 'compras_gerenciar') or private.pode(p_empresa, 'materia_movimentar')) then raise exception 'Sem permissão para registrar compras'; end if;
+  if not private.pode(p_empresa, 'compras_gerenciar') then raise exception 'Sem permissão para registrar compras'; end if;
   if coalesce(trim(p_nome), '') = '' then raise exception 'Informe o nome do item'; end if;
   if p_quantidade is null or p_quantidade <= 0 then raise exception 'Quantidade inválida'; end if;
   if p_valor_total is null or p_valor_total < 0 then raise exception 'Valor inválido'; end if;

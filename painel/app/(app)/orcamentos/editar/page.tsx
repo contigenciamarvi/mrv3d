@@ -206,7 +206,7 @@ function Editor() {
       {id && app.pode("orcamentos_criar") && app.podeEscrever && (
         <div className="mb-4 flex flex-wrap gap-2">
           {link && <Button size="sm" variant="secondary" onClick={() => setDialogo("enviado")}><Link2 className="h-4 w-4" /> Link do cliente</Button>}
-          {["rascunho", "enviado"].includes(status) && <Button size="sm" variant="secondary" onClick={() => setDialogo("aprovar")}><Check className="h-4 w-4 text-emerald-600" /> Aprovar</Button>}
+          {["rascunho", "enviado"].includes(status) && app.pode("descontos_aprovar") && <Button size="sm" variant="secondary" onClick={() => setDialogo("aprovar")}><Check className="h-4 w-4 text-emerald-600" /> Aprovar</Button>}
           {["rascunho", "enviado"].includes(status) && <Button size="sm" variant="secondary" onClick={() => setDialogo("rejeitar")}><X className="h-4 w-4 text-red-600" /> Recusado</Button>}
           {status === "aprovado" && app.pode("pedidos_editar") && <Button size="sm" onClick={() => setDialogo("converter")}><ShoppingCart className="h-4 w-4" /> Converter em pedido</Button>}
           {status === "convertido" && !!orc?.pedido_id && <Link href={`/pedidos/?id=${orc.pedido_id}`}><Button size="sm" variant="secondary"><ShoppingCart className="h-4 w-4" /> Ver pedido</Button></Link>}
@@ -406,10 +406,11 @@ function ItemCard({ it, idx, base, pode, verCusto, aberto, congelado, salvo, c, 
                 <div className="flex justify-between"><span>Máquina (depreciação + manutenção)</span><span className="tnum">{brl(v("custo_maquina") ?? (c.maquina as number))}</span></div>
                 <div className="flex justify-between"><span>Mão de obra</span><span className="tnum">{brl(v("custo_mao_obra") ?? (c.maoObra as number))}</span></div>
                 <div className="flex justify-between font-medium sm:col-span-2 border-t border-slate-200 pt-1 dark:border-slate-700"><span>Custo total por peça</span><span className="tnum">{brl(custo)}</span></div>
-                <div className="flex justify-between sm:col-span-2"><span>Preço = custo ÷ (1 − {num(c.margem as number)}% − {num(c.impostos as number)}% − {num(c.taxas as number)}%)</span><span className="tnum font-semibold">{Number.isFinite(preco) ? brl(preco) : "inválido"}</span></div>
+                <div className="flex justify-between sm:col-span-2"><span>Preço = custo ÷ (1 − {num(v("margem_efetiva") ?? (c.margem as number))}% − {num(v("impostos_efetivo") ?? (c.impostos as number))}% − {num(v("taxas_efetiva") ?? (c.taxas as number))}%)</span><span className="tnum font-semibold">{Number.isFinite(preco) ? brl(preco) : "inválido"}</span></div>
               </div>
             </div>
           )}
+          {!app.pode("descontos_aprovar") && <p className="text-xs text-slate-500">Preço abaixo do calculado (margem, impostos ou taxas menores, preço manual ou desconto de terceiros) precisa de quem pode aprovar descontos.</p>}
           {pode && <button type="button" onClick={onRemover} className="flex items-center gap-1 text-sm text-red-600 hover:underline"><Trash2 className="h-4 w-4" /> Remover item</button>}
         </div>
       )}

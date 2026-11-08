@@ -12,8 +12,7 @@ const LIM = { entradas: 2000, arquivos3d: 200, porArquivo: 200 * 1048576, total:
 export async function ehZipComum(f: File): Promise<boolean> {
   const c = new Uint8Array(await f.slice(0, 4).arrayBuffer());
   if (!(c[0] === 0x50 && c[1] === 0x4b && c[2] === 0x03 && c[3] === 0x04)) return false;
-  if (/\.zip$/i.test(f.name)) return true;
-  if (/\.3mf$/i.test(f.name)) return false;
+  // um 3MF renomeado para .zip (o navegador ou o Windows às vezes faz isso) continua sendo 3MF
   return !(await entradas(f)).some((e) => /^3D\/3dmodel\.model$/i.test(e.nome));
 }
 
@@ -24,6 +23,13 @@ async function entradas(f: File): Promise<Entrada[]> {
     unzipSync(new Uint8Array(await f.arrayBuffer()), { filter: (e) => { lista.push({ nome: e.name, comprimido: e.size, tamanho: e.originalSize }); return false; } });
   } catch { throw new Error("Não foi possível abrir o .zip (arquivo corrompido ou protegido por senha)"); }
   return lista;
+}
+
+/** Nome corrigido para um 3MF que chegou com extensão .zip ("modelo.3mf.zip" → "modelo.3mf"). */
+export function nome3mf(f: File): File {
+  if (!/\.zip$/i.test(f.name)) return f;
+  const base = f.name.replace(/\.zip$/i, "");
+  return new File([f], /\.3mf$/i.test(base) ? base : `${base}.3mf`, { lastModified: f.lastModified });
 }
 
 /** Extrai só os arquivos 3D do .zip (ignora pastas, imagens, PDFs e lixo do macOS). */

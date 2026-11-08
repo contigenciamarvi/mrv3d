@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { zipSync, strToU8 } from "fflate";
-import { arquivos3dDoZip, ehZipComum } from "../lib/zip3d.ts";
+import { arquivos3dDoZip, ehZipComum, nome3mf } from "../lib/zip3d.ts";
 
 const arquivo = (bytes: Uint8Array, nome: string) => new File([bytes as BlobPart], nome);
 const stl = strToU8("solid x\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid x\n");
@@ -28,4 +28,12 @@ test("zip sem modelo 3D, zip bomb e zip corrompido são recusados", async () => 
   const bomba = zipSync({ "grande.stl": new Uint8Array(30 * 1048576) }, { level: 9 });
   await assert.rejects(arquivos3dDoZip(arquivo(bomba, "b.zip")), /zip bomb/);
   await assert.rejects(arquivos3dDoZip(arquivo(new Uint8Array([0x50, 0x4b, 3, 4, 9, 9, 9]), "c.zip")), /Não foi possível/);
+});
+
+test("3MF que chegou como .3mf.zip é tratado como 3MF", async () => {
+  const tresmf = zipSync({ "3D/3dmodel.model": strToU8("<model/>"), "[Content_Types].xml": strToU8("<Types/>") });
+  const f = arquivo(tresmf, "6_wands_X1.3mf.zip");
+  assert.equal(await ehZipComum(f), false);
+  assert.equal(nome3mf(f).name, "6_wands_X1.3mf");
+  assert.equal(nome3mf(arquivo(tresmf, "projeto.zip")).name, "projeto.3mf");
 });

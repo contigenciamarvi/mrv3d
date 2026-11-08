@@ -10,7 +10,7 @@ import { toast, erro } from "@/lib/toast";
 import { brl, num, data, dataHora, hojeISO, numOuNull, linkWhats, preencher, STATUS_ORCAMENTO, TECNOLOGIAS, cn } from "@/lib/utils";
 import { analisarModelo, densidadeDe, type Analise } from "@/lib/modelo3d";
 import { Button, Card, CardTitle, Field, Input, Select, Textarea, Grid, Modal, Table, Td, Loading, Badge, tomStatus, Aviso, Confirmar } from "@/components/ui";
-import { ehZipComum, arquivos3dDoZip } from "@/lib/zip3d";
+import { ehZipComum, arquivos3dDoZip, nome3mf } from "@/lib/zip3d";
 
 type Mat = { id: string; nome: string; material: string | null; cor: string | null; unidade: string; custo_medio: number; peso_liquido_g: number | null; margem_pct: number | null };
 type Imp = { id: string; nome: string; tecnologia: string; potencia_w: number; custo_hora: number };
@@ -337,8 +337,10 @@ function ItemCard({ it, idx, base, pode, verCusto, aberto, congelado, salvo, c, 
   const ler = async (arq: File | undefined) => {
     if (!arq) return; setLendo(true);
     try {
+      const zipComum = await ehZipComum(arq);
+      if (!zipComum) arq = nome3mf(arq); // 3MF que chegou como "modelo.3mf.zip"
       const ext = arq.name.split(".").pop()?.toLowerCase();
-      if (await ehZipComum(arq)) {
+      if (zipComum) {
         // .zip com as peças: anexa o .zip inteiro e soma o volume dos STL/3MF de dentro
         const pecas = (await arquivos3dDoZip(arq)).filter((x) => /\.(stl|3mf)$/i.test(x.name));
         let vol = 0, tri = 0, lidas = 0;

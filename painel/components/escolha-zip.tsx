@@ -2,7 +2,7 @@
 import { useRef, useState } from "react";
 import { FileArchive } from "lucide-react";
 import { Modal, Button } from "@/components/ui";
-import { arquivos3dDoZip, ehZipComum } from "@/lib/zip3d";
+import { arquivos3dDoZip, ehZipComum, nome3mf } from "@/lib/zip3d";
 
 const tam = (b: number) => (b > 1048576 ? `${(b / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
@@ -16,7 +16,7 @@ export function useArquivoDoZip() {
   const resolver = useRef<((f: File | null) => void) | null>(null);
 
   const abrir = async (f: File): Promise<File | null> => {
-    if (!(await ehZipComum(f))) return f;
+    if (!(await ehZipComum(f))) return nome3mf(f);
     const arquivos = await arquivos3dDoZip(f);
     if (arquivos.length === 1) return arquivos[0];
     return new Promise((ok) => { resolver.current = ok; setOpcoes({ zip: f.name, arquivos }); });

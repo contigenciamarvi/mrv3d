@@ -20,7 +20,7 @@ const MENU: { href: string; label: string; icon: typeof LayoutDashboard; pronto:
   { href: "/usuarios/", label: "Usuários", icon: Users, pronto: true, papeis: ["proprietario", "administrador", "suporte", "atendimento"] },
   { href: "/planos/", label: "Planos e Assinaturas", icon: Layers, pronto: true },
   { href: "/cobrancas/", label: "Cobranças", icon: Receipt, pronto: true, papeis: ["proprietario", "administrador", "financeiro", "suporte"] },
-  { href: "#", label: "Financeiro SaaS", icon: Wallet, pronto: false },
+  { href: "/financeiro/", label: "Financeiro SaaS", icon: Wallet, pronto: true, papeis: ["proprietario", "administrador", "financeiro"] },
   { href: "#", label: "Relatórios", icon: BarChart3, pronto: false },
   { href: "/uso/", label: "Uso da Plataforma", icon: Gauge, pronto: true },
   { href: "#", label: "Suporte", icon: LifeBuoy, pronto: false },

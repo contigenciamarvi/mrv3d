@@ -65,9 +65,16 @@ function Detalhe({ s, onClose, onMudou }: { s: Sol | null; onClose: () => void; 
   const [recusar, setRecusar] = useState("");
   const [abrirRecusa, setAbrirRecusa] = useState(false);
   const [ocupado, setOcupado] = useState(false);
+  const [vincular, setVincular] = useState<string>("");
+  const { dados: parecidos } = useDados(async () => {
+    if (!s || s.orcamento_id || !app.pode("clientes_ver")) return [];
+    const filtros = [s.email && `email.ilike.${s.email}`, s.telefone && `whatsapp.eq.${s.telefone}`, s.telefone && `telefone.eq.${s.telefone}`].filter(Boolean).join(",");
+    if (!filtros) return [];
+    return q<{ id: string; nome: string; email: string | null; whatsapp: string | null }[]>(sb().from("clientes").select("id,nome,email,whatsapp").eq("empresa_id", app.empresa.id).or(filtros).limit(5));
+  }, [s?.id]);
   if (!s) return null;
   const mudar = async (status: string, motivo?: string) => { setOcupado(true); try { await rpc("portal_mudar_status", { p_id: s.id, p_status: status, p_motivo: motivo || null }); toast(STATUS_PORTAL[status]); setAbrirRecusa(false); onMudou(); } catch (e) { erro(e); } finally { setOcupado(false); } };
-  const gerar = async () => { setOcupado(true); try { const id = await rpc<string>("portal_gerar_orcamento", { p_id: s.id }); onMudou(); router.push(`/orcamentos/editar/?id=${id}`); } catch (e) { erro(e); setOcupado(false); } };
+  const gerar = async () => { setOcupado(true); try { const id = await rpc<string>("portal_gerar_orcamento", { p_id: s.id, p_cliente: vincular || null }); onMudou(); router.push(`/orcamentos/editar/?id=${id}`); } catch (e) { erro(e); setOcupado(false); } };
   const whats = linkWhats(s.telefone, `Olá ${s.nome.split(" ")[0]}! Recebemos sua solicitação #${s.numero} pela loja da ${app.empresa.nome}. Acompanhe por aqui: ${linkAcomp(s.token)}`);
   return (
     <Modal aberto titulo={`Solicitação #${s.numero}`} onClose={onClose} largura="max-w-2xl">
@@ -91,6 +98,10 @@ function Detalhe({ s, onClose, onMudou }: { s: Sol | null; onClose: () => void; 
           </div>
           <p className="mt-1 text-xs text-slate-500">O comprador vê a proposta, aprova e acompanha produção e entrega por esse link.</p>
         </div>
+        {!s.orcamento_id && orca && !!parecidos?.length && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+          <div className="mb-1 text-xs text-amber-900 dark:text-amber-200">Já existe cliente com este contato. O portal não confirma quem é o comprador: só vincule se tiver certeza.</div>
+          <select className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950" value={vincular} onChange={(e) => setVincular(e.target.value)}>
+            <option value="">Cadastrar como cliente novo (recomendado)</option>{parecidos.map((c) => <option key={c.id} value={c.id}>Vincular a {c.nome}{c.email ? ` · ${c.email}` : ""}</option>)}</select></div>}
         <div className="flex flex-wrap justify-end gap-2">
           {s.orcamento_id ? <Button onClick={() => router.push(`/orcamentos/editar/?id=${s.orcamento_id}`)}><FileText className="h-4 w-4" /> Abrir orçamento #{s.orcamentos?.numero}</Button> : orca && <>
             {s.status === "nova" && <Button variant="secondary" loading={ocupado} onClick={() => mudar("em_analise")}><Search className="h-4 w-4" /> Em análise</Button>}

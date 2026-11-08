@@ -32,8 +32,8 @@ select pg_temp.falha($$update public.pedidos_compra set status = 'aprovado' wher
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
 select public.compra_mudar_status((select v from f4 where k = 'pc'), 'aprovado', null);
 select pg_temp.ok((select status = 'aprovado' and aprovado_por = '00000000-0000-0000-0000-0000000000f1' from public.pedidos_compra where id = (select v from f4 where k = 'pc')), 'F4 financeiro aprova');
-select pg_temp.falha($$update public.pedido_compra_itens set preco_unitario = 1 where descricao = 'PLA preto'$$, 'F4 itens travados depois de aprovar', 'aprovada');
-select pg_temp.falha($$update public.pedidos_compra set frete = 0 where id = (select v from f4 where k = 'pc')$$, 'F4 frete travado depois de aprovar', 'aprovada');
+select pg_temp.falha($$update public.pedido_compra_itens set preco_unitario = 1 where descricao = 'PLA preto'$$, 'F4 itens travados depois de aprovar', 'rascunho');
+select pg_temp.falha($$update public.pedidos_compra set frete = 0 where id = (select v from f4 where k = 'pc')$$, 'F4 frete travado depois de aprovar', 'aprovação');
 select pg_temp.falha($$select public.receber_compra((select v from f4 where k = 'pc'), '[]', null, null, null, null)$$, 'F4 não recebe antes de enviar ao fornecedor', 'enviadas');
 select public.compra_mudar_status((select v from f4 where k = 'pc'), 'enviado', null);
 select pg_temp.ok((select count(*) = 2 and sum(valor) = 240 and bool_and(categoria = 'filamentos' and not pago) from public.lancamentos where compra_id = (select v from f4 where k = 'pc')), 'F4 compra enviada gera 2 parcelas a pagar = 240');
@@ -143,7 +143,7 @@ select pg_temp.falha($$select public.mudar_status_envio((select v from f4 where 
 update public.envios set codigo_rastreio = 'BR999' where id = (select v from f4 where k = 'env');
 select public.mudar_status_envio((select v from f4 where k = 'env'), 'enviado', null, null);
 select pg_temp.ok((select status_entrega = 'enviado' and codigo_rastreio = 'BR999' from public.pedidos where id = (select v from f4 where k = 'pe')), 'F4 pedido acompanha o envio (enviado + rastreio)');
-select pg_temp.ok((select data_postagem = current_date and conferido_em is not null and lancamento_id is null from public.envios where id = (select v from f4 where k = 'env')), 'F4 postagem registrada; expedição sem acesso financeiro não lança frete');
+select pg_temp.ok((select data_postagem = current_date and conferido_em is not null and lancamento_id is not null from public.envios where id = (select v from f4 where k = 'env')), 'F4 postagem registrada e frete vira conta a pagar');
 select pg_temp.falha($$select public.mudar_status_envio((select v from f4 where k = 'env'), 'embalado', null, null)$$, 'F4 envio que saiu não volta', 'saiu');
 select public.mudar_status_envio((select v from f4 where k = 'env'), 'entregue', null, null);
 select pg_temp.ok((select status = 'entregue' and status_entrega = 'entregue' and entregue_em is not null from public.pedidos where id = (select v from f4 where k = 'pe')), 'F4 entregue');
@@ -251,5 +251,51 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
 select pg_temp.falha($$select public.relatorio((select v from f4 where k = 'ea'), 'lucro_pedido', current_date - 30, current_date)$$, 'F4 comercial sem acesso a relatórios de lucro', 'relatórios');
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
 select pg_temp.falha($$select public.relatorio((select v from f4 where k = 'ea'), 'faturamento', current_date - 30, current_date)$$, 'F4 B não vê relatórios da A', 'relatórios');
-reset role;
+
+
 \echo FASE 4 OK
+-- ===================== REVISÃO DE SEGURANÇA =====================
+reset role;
+insert into f4 select 'cliCarlos', cliente_id from public.portal_solicitacoes where nome = 'Carlos';
+insert into storage.objects(bucket_id, name, metadata) values ('empresa', (select v from f4 where k = 'ea') || '/financeiro/extrato.pdf', '{"size": 10}');
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+insert into public.portal_config(empresa_id, slug, ativo) values ((select v from f4 where k = 'eb'), 'loja-b', true);
+select pg_temp.falha(format($$insert into public.produtos(empresa_id, nome, no_portal, foto_path) values (%L, 'isca', true, %L)$$, (select v from f4 where k = 'eb'), (select v from f4 where k = 'ea') || '/financeiro/extrato.pdf'), 'F4R1 produto não aponta para arquivo de outra loja', 'produto_foto_propria');
+select pg_temp.falha(format($$update public.empresa_config set logo_path = %L where empresa_id = %L$$, (select v from f4 where k = 'ea') || '/financeiro/extrato.pdf', (select v from f4 where k = 'eb')), 'F4R1 logo não aponta para arquivo de outra loja', 'config_logo_propria');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select pg_temp.falha(format($$insert into public.produtos(empresa_id, nome, no_portal, foto_path) values (%L, 'vazamento', true, %L)$$, (select v from f4 where k = 'ea'), (select v from f4 where k = 'ea') || '/financeiro/extrato.pdf'), 'F4R1 foto só da pasta produtos', 'produto_foto_propria');
+set role anon; reset request.jwt.claim.sub;
+select pg_temp.ok((select count(*) = 0 from storage.objects where name like '%/financeiro/%'), 'F4R1 visitante não lê arquivos financeiros');
+-- R2: cliente só é vinculado por escolha da equipe
+select public.portal_solicitar('loja-b', jsonb_build_object('nome', 'Impostor', 'email', 'carlos@x.com', 'observacoes', 'quero passar por outro cliente'));
+set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+select pg_temp.falha(format($$select public.portal_gerar_orcamento((select id from public.portal_solicitacoes where nome = 'Impostor'), %L)$$, (select v from f4 where k = 'cliCarlos')), 'F4R2 não vincula a cliente de outra loja');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+-- R4: solicitada fica congelada
+insert into public.pedidos_compra(empresa_id, fornecedor_id) values ((select v from f4 where k = 'ea'), (select v from f4 where k = 'forn'));
+insert into f4 select 'pc3', id from public.pedidos_compra order by numero desc limit 1;
+insert into public.pedido_compra_itens(empresa_id, pedido_compra_id, material_id, descricao, quantidade, preco_unitario) values ((select v from f4 where k = 'ea'), (select v from f4 where k = 'pc3'), (select v from f4 where k = 'pla'), 'PLA R5', 4, 50);
+select public.compra_mudar_status((select v from f4 where k = 'pc3'), 'solicitado', null);
+select pg_temp.falha($$update public.pedido_compra_itens set preco_unitario = 999 where descricao = 'PLA R5'$$, 'F4R4 itens congelados ao pedir aprovação', 'rascunho');
+select pg_temp.falha($$update public.pedidos_compra set frete = 99 where id = (select v from f4 where k = 'pc3')$$, 'F4R4 valores congelados ao pedir aprovação', 'aprovação');
+-- R5: encerrar parcial reduz as parcelas em aberto
+select public.compra_mudar_status((select v from f4 where k = 'pc3'), 'aprovado', null);
+select public.compra_mudar_status((select v from f4 where k = 'pc3'), 'enviado', null);
+select public.receber_compra((select v from f4 where k = 'pc3'), jsonb_build_array(jsonb_build_object('item_id', (select id from public.pedido_compra_itens where descricao = 'PLA R5'), 'quantidade', 1)), null, null, null, null);
+select public.encerrar_compra((select v from f4 where k = 'pc3'), 'fornecedor sem estoque');
+select pg_temp.ok((select sum(valor) = 50 from public.lancamentos where compra_id = (select v from f4 where k = 'pc3') and not cancelado), 'F4R5 encerrar parcial deixa a pagar só o recebido');
+-- R8c: plano de outra impressora
+insert into public.impressoras(empresa_id, nome) values ((select v from f4 where k = 'ea'), 'Ender R8');
+select pg_temp.falha(format($$insert into public.manutencoes(empresa_id, impressora_id, plano_id, descricao) values (%L, (select id from public.impressoras where nome = 'Ender R8'), %L, 'x')$$,
+  (select v from f4 where k = 'ea'), (select v from f4 where k = 'plano')), 'F4R8 plano de outra impressora', 'outra impressora');
+-- R8a: frete alterado acompanha a conta
+insert into public.pedidos(empresa_id, descricao, valor_total) values ((select v from f4 where k = 'ea'), 'F4 R8 frete', 70);
+update public.pedidos set status_producao = 'nao_aplica' where descricao = 'F4 R8 frete';
+insert into f4 values ('env5', public.criar_envio((select id from public.pedidos where descricao = 'F4 R8 frete'), 'correios'));
+update public.envios set frete_custo = 15, codigo_rastreio = 'BR5' where id = (select v from f4 where k = 'env5');
+select public.mudar_status_envio((select v from f4 where k = 'env5'), 'enviado', null, null);
+update public.envios set frete_custo = 20 where id = (select v from f4 where k = 'env5');
+select pg_temp.falha($$update public.envios set frete_custo = 1 where id = (select v from f4 where k = 'env3')$$, 'F4R8 envio encerrado não muda frete', 'encerrado');
+reset role;
+select pg_temp.ok((select l.valor = 20 from public.envios e join public.lancamentos l on l.id = e.lancamento_id where e.id = (select v from f4 where k = 'env5')), 'F4R8 frete alterado atualiza a conta a pagar');
+\echo REVISAO FASE 4 OK

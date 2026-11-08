@@ -116,8 +116,10 @@ alter table public.pedidos_compra enable row level security;
 create policy pc_ler on public.pedidos_compra for select using (private.tem_permissao(empresa_id, 'compras_gerenciar') or private.tem_permissao(empresa_id, 'financeiro_ver') or private.tem_acesso_suporte(empresa_id));
 create policy pc_inserir on public.pedidos_compra for insert with check (private.pode(empresa_id, 'compras_gerenciar'));
 create policy pc_alterar on public.pedidos_compra for update using (private.pode(empresa_id, 'compras_gerenciar')) with check (private.pode(empresa_id, 'compras_gerenciar'));
+create or replace function private.compra_tem_pago(p_id uuid) returns boolean
+language sql stable security definer set search_path = '' as $$ select exists (select 1 from public.lancamentos where compra_id = p_id and pago and not cancelado) $$;
 create policy pc_excluir on public.pedidos_compra for delete using (private.pode(empresa_id, 'compras_gerenciar') and status in ('rascunho','cancelado')
-  and not exists (select 1 from public.lancamentos l where l.compra_id = pedidos_compra.id and l.pago));
+  and not private.compra_tem_pago(id));
 create trigger trg_pc_upd before update on public.pedidos_compra for each row execute function public.set_updated_at();
 create trigger trg_mesma_empresa before insert or update on public.pedidos_compra for each row execute function private.checar_mesma_empresa('fornecedor_id:fornecedores', 'conta_id:contas_financeiras');
 create trigger trg_audemp_pc after insert or update or delete on public.pedidos_compra for each row execute function private.auditar_empresa();
@@ -139,9 +141,9 @@ begin
     if (to_jsonb(new) - v_livres) <> (to_jsonb(old) - v_livres) then
       raise exception 'Situação e aprovação da compra mudam pelos botões da compra';
     end if;
-    if old.status not in ('rascunho','solicitado') and (to_jsonb(new) - array['observacoes','previsao_entrega','updated_at','total'])
+    if old.status <> 'rascunho' and (to_jsonb(new) - array['observacoes','previsao_entrega','updated_at','total'])
                                                        <> (to_jsonb(old) - array['observacoes','previsao_entrega','updated_at','total']) then
-      raise exception 'Compra já aprovada: só a previsão de entrega e as observações podem mudar';
+      raise exception 'Compra enviada para aprovação: só a previsão de entrega e as observações podem mudar (volte para rascunho para editar)';
     end if;
   end if;
   new.total := new.subtotal + new.frete - new.desconto;
@@ -180,7 +182,7 @@ declare v_int boolean := coalesce(current_setting('app.pc_interno', true), '') =
 begin
   select status into v_st from public.pedidos_compra where id = case when tg_op = 'DELETE' then old.pedido_compra_id else new.pedido_compra_id end;
   if not v_int and v_st is not null then
-    if v_st not in ('rascunho','solicitado') then raise exception 'Itens só podem mudar enquanto a compra não foi aprovada'; end if;
+    if v_st <> 'rascunho' then raise exception 'Itens só mudam no rascunho: volte a compra para rascunho para editar'; end if;
     if tg_op = 'UPDATE' and (new.pedido_compra_id <> old.pedido_compra_id or new.quantidade_recebida <> old.quantidade_recebida) then
       raise exception 'O recebimento é registrado pelo botão Receber';
     end if;
@@ -274,6 +276,7 @@ begin
       raise exception 'Compra com itens recebidos não pode ser cancelada';
     end if;
     if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Informe o motivo do cancelamento'; end if;
+    perform 1 from public.lancamentos where compra_id = p.id for update;
     if exists (select 1 from public.lancamentos where compra_id = p.id and pago and not cancelado) then
       raise exception 'Há parcela desta compra já paga: desmarque o pagamento no Financeiro antes de cancelar';
     end if;
@@ -332,17 +335,32 @@ end; $$;
 
 -- encerrar uma compra parcial (o fornecedor não vai mandar o resto)
 create or replace function public.encerrar_compra(p_id uuid, p_motivo text)
-returns void language plpgsql security definer set search_path = '' as $$
-declare p public.pedidos_compra;
+returns numeric language plpgsql security definer set search_path = '' as $$
+declare p public.pedidos_compra; v_receb numeric; v_dif numeric; v_red numeric; l record;
 begin
   select * into p from public.pedidos_compra where id = p_id for update;
   if p.id is null or not private.pode(p.empresa_id, 'compras_gerenciar') then raise exception 'Compra não encontrada'; end if;
   if p.status <> 'parcial' then raise exception 'Só compras recebidas em parte podem ser encerradas'; end if;
   if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Informe o motivo'; end if;
+  -- valor do que chegou (com frete/desconto rateados); o resto sai das parcelas em aberto, da última para a primeira
+  v_receb := round(coalesce((select sum(quantidade_recebida * preco_unitario) from public.pedido_compra_itens where pedido_compra_id = p.id), 0)
+                   * case when p.subtotal > 0 then (p.subtotal + p.frete - p.desconto) / p.subtotal else 1 end, 2);
+  v_dif := greatest(p.total - v_receb, 0);
+  perform set_config('app.fin_interno', '1', true);
+  for l in select id, valor from public.lancamentos where compra_id = p.id and not pago and not cancelado order by vencimento desc for update loop
+    exit when v_dif <= 0;
+    v_red := least(l.valor, v_dif);
+    if v_red >= l.valor then update public.lancamentos set cancelado = true where id = l.id;
+    else update public.lancamentos set valor = valor - v_red where id = l.id; end if;
+    v_dif := v_dif - v_red;
+  end loop;
+  perform set_config('app.fin_interno', '0', true);
   perform set_config('app.pc_interno', '1', true);
   update public.pedidos_compra set status = 'recebido', recebido_em = now(),
-         observacoes = left(coalesce(observacoes || E'\n', '') || 'Encerrada sem receber tudo: ' || trim(p_motivo), 5000) where id = p.id;
+         observacoes = left(coalesce(observacoes || E'\n', '') || 'Encerrada sem receber tudo: ' || trim(p_motivo)
+           || case when v_dif > 0 then ' · R$ ' || to_char(v_dif, 'FM999G999G990D00') || ' já pago a mais: combinar crédito com o fornecedor' else '' end, 5000) where id = p.id;
   perform set_config('app.pc_interno', '0', true);
+  return v_dif;
 end; $$;
 
 -- entrada de compra não é estornada pelo estoque (desalinharia o recebimento)
@@ -466,6 +484,15 @@ begin
   end if;
   return new;
 end; $$;
+create or replace function private.manut_plano_mesma_impressora() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.plano_id is not null and not exists (select 1 from public.manutencao_planos where id = new.plano_id and impressora_id = new.impressora_id) then
+    raise exception 'O plano escolhido é de outra impressora';
+  end if;
+  return new;
+end; $$;
+create trigger trg_manut_plano before insert or update of plano_id, impressora_id on public.manutencoes for each row execute function private.manut_plano_mesma_impressora();
 create trigger trg_manut_antes before insert or update on public.manutencoes for each row execute function private.manut_antes();
 
 create table if not exists public.manutencao_anexos (
@@ -651,6 +678,14 @@ begin
   if (select jsonb_object_agg(k, to_jsonb(new)->k) from unnest(v_fixos) k) <> (select jsonb_object_agg(k, to_jsonb(old)->k) from unnest(v_fixos) k) then
     raise exception 'A situação do envio muda pelos botões da expedição';
   end if;
+  -- frete já lançado: acompanha a alteração enquanto a conta não foi paga
+  if new.frete_custo is distinct from old.frete_custo and old.lancamento_id is not null then
+    if exists (select 1 from public.lancamentos where id = old.lancamento_id and pago) then raise exception 'O frete já foi pago no financeiro: ajuste por lá'; end if;
+    perform set_config('app.fin_interno', '1', true);
+    if new.frete_custo > 0 then update public.lancamentos set valor = new.frete_custo where id = old.lancamento_id;
+    else update public.lancamentos set cancelado = true where id = old.lancamento_id; end if;
+    perform set_config('app.fin_interno', '0', true);
+  end if;
   if old.status in ('entregue','retirado','cancelado','devolvido') and (to_jsonb(new) - array['observacoes','comprovante_path','recebido_por','updated_at'])
                                                                      <> (to_jsonb(old) - array['observacoes','comprovante_path','recebido_por','updated_at']) then
     raise exception 'Envio encerrado: só observações e comprovante podem mudar';
@@ -778,7 +813,7 @@ begin
     observacoes = case when p_status in ('cancelado','devolvido') then left(coalesce(observacoes || E'\n', '') || initcap(p_status::text) || ': ' || trim(p_obs), 2000) else observacoes end
    where id = e.id returning * into e;
   -- frete pago pela loja vira conta a pagar (uma vez), se quem opera pode lançar
-  if e.status in ('enviado','em_transito','entregue','retirado') and e.frete_custo > 0 and e.lancamento_id is null and private.pode_lancar(e.empresa_id) then
+  if e.status in ('enviado','em_transito','entregue','retirado') and e.frete_custo > 0 and e.lancamento_id is null then
     v_lanc := private.lancar_despesa(e.empresa_id, 'fretes', 'Frete envio #' || e.numero || ' · pedido #' || (select numero from public.pedidos where id = e.pedido_id),
                                      e.frete_custo, current_date, null, null, e.id, null, null, null, null, null);
     update public.envios set lancamento_id = v_lanc where id = e.id;
@@ -882,6 +917,11 @@ end; $$;
 create trigger trg_portal_slug before insert or update on public.portal_config for each row execute function private.portal_slug_valido();
 
 alter table public.produtos add column if not exists no_portal boolean not null default false;
+-- foto e logo só podem apontar para arquivos da própria empresa
+do $$ begin
+  alter table public.produtos add constraint produto_foto_propria check (foto_path is null or foto_path like empresa_id::text || '/produtos/%') not valid;
+  alter table public.empresa_config add constraint config_logo_propria check (logo_path is null or logo_path like empresa_id::text || '/logo/%') not valid;
+exception when duplicate_object then null; end $$;
 
 create table if not exists public.portal_solicitacoes (
   id uuid primary key default gen_random_uuid(),
@@ -938,28 +978,30 @@ end; $$;
 
 -- arquivo enviado pelo comprador: <empresa>/portal/<pasta uuid>/<arquivo>
 create or replace function private.pode_enviar_portal(p_nome text) returns boolean
-language plpgsql stable security definer set search_path = '' as $$
-declare v_emp uuid := private.uuid_ou_nulo(split_part(p_nome, '/', 1)); v_lim numeric; v_uso numeric;
+language plpgsql volatile security definer set search_path = '' as $$
+declare v_emp uuid := private.uuid_ou_nulo(split_part(p_nome, '/', 1)); v_uso numeric;
 begin
   if v_emp is null or split_part(p_nome, '/', 2) <> 'portal' or private.uuid_ou_nulo(split_part(p_nome, '/', 3)) is null
      or split_part(p_nome, '/', 4) = '' or split_part(p_nome, '/', 5) <> '' then return false; end if;
   if lower(reverse(split_part(reverse(p_nome), '.', 1))) not in ('stl','3mf','obj','step','stp') then return false; end if;
   if not exists (select 1 from public.portal_config pc join public.empresas e on e.id = pc.empresa_id
                   where pc.empresa_id = v_emp and pc.ativo and pc.aceitar_arquivos and e.status not in ('suspensa','cancelada')) then return false; end if;
-  -- limite de envios anônimos por hora e espaço do plano
-  if (select count(*) from storage.objects where bucket_id = 'empresa' and name like v_emp::text || '/portal/%' and created_at > now() - interval '1 hour') >= 30 then return false; end if;
-  v_lim := (private.plano_empresa(v_emp)).armazenamento_mb;
-  select coalesce(sum((metadata->>'size')::numeric), 0) / 1048576 into v_uso from storage.objects where bucket_id = 'empresa' and name like v_emp::text || '/%';
-  return v_lim is null or v_uso < v_lim;
+  -- envios anônimos: 60 por hora e um espaço próprio de 2 GB (não consome o espaço da equipe)
+  perform pg_advisory_xact_lock(hashtext('portal-up:' || v_emp::text));
+  if (select count(*) from storage.objects where bucket_id = 'empresa' and name like v_emp::text || '/portal/%' and created_at > now() - interval '1 hour') >= 60 then return false; end if;
+  select coalesce(sum((metadata->>'size')::numeric), 0) / 1048576 into v_uso from storage.objects where bucket_id = 'empresa' and name like v_emp::text || '/portal/%';
+  return v_uso < 2048;
 end; $$;
 
 -- foto de produto exibido no portal pode ser vista por qualquer visitante
 create or replace function private.foto_publica_portal(p_nome text) returns boolean
 language sql stable security definer set search_path = '' as $$
   select exists (select 1 from public.produtos p join public.portal_config pc on pc.empresa_id = p.empresa_id
-                  where p.foto_path = p_nome and p.no_portal and p.status = 'ativo' and pc.ativo)
-      or exists (select 1 from public.empresa_config c join public.portal_config pc on pc.empresa_id = c.empresa_id
-                  where c.logo_path = p_nome and pc.ativo);
+                  join public.empresas e on e.id = p.empresa_id
+                  where p.foto_path = p_nome and p_nome like p.empresa_id::text || '/produtos/%' and p.no_portal and p.status = 'ativo' and pc.ativo
+                    and e.status not in ('suspensa','cancelada'))
+      or exists (select 1 from public.empresa_config c join public.portal_config pc on pc.empresa_id = c.empresa_id join public.empresas e on e.id = c.empresa_id
+                  where c.logo_path = p_nome and p_nome like c.empresa_id::text || '/logo/%' and pc.ativo and e.status not in ('suspensa','cancelada'));
 $$;
 
 do $$ begin
@@ -983,7 +1025,7 @@ begin
   if not exists (select 1 from public.empresas where id = v_emp and status not in ('suspensa','cancelada')) then raise exception 'Loja indisponível no momento'; end if;
   perform pg_advisory_xact_lock(hashtext('portal:' || v_emp::text));
   -- proteção contra abuso
-  if (select count(*) from public.portal_solicitacoes where empresa_id = v_emp and created_at > now() - interval '1 hour') >= 20 then
+  if (select count(*) from public.portal_solicitacoes where empresa_id = v_emp and created_at > now() - interval '1 hour') >= 100 then
     raise exception 'Muitas solicitações agora. Tente de novo mais tarde ou fale pelo WhatsApp.';
   end if;
   if (v_email is not null and (select count(*) from public.portal_solicitacoes where empresa_id = v_emp and email = v_email and created_at > now() - interval '1 hour') >= 3)
@@ -1067,7 +1109,7 @@ begin
 end; $$;
 
 -- transforma a solicitação em orçamento (cliente é encontrado ou cadastrado)
-create or replace function public.portal_gerar_orcamento(p_id uuid)
+create or replace function public.portal_gerar_orcamento(p_id uuid, p_cliente uuid default null)
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare s public.portal_solicitacoes; pr public.produtos; v_cli uuid; v_orc uuid; v_arq jsonb;
 begin
@@ -1075,11 +1117,11 @@ begin
   if s.id is null or not private.pode(s.empresa_id, 'orcamentos_criar') then raise exception 'Solicitação não encontrada'; end if;
   if s.orcamento_id is not null then return s.orcamento_id; end if;
   if s.status = 'recusada' then raise exception 'Solicitação recusada: reabra antes de orçar'; end if;
-  select id into v_cli from public.clientes where empresa_id = s.empresa_id
-     and ((s.email is not null and lower(email) = s.email) or (s.telefone is not null and regexp_replace(coalesce(whatsapp, telefone, ''), '[^0-9+]', '', 'g') = s.telefone))
-   order by created_at limit 1;
-  if v_cli is null then
-    if not private.pode(s.empresa_id, 'clientes_editar') and not private.pode(s.empresa_id, 'orcamentos_criar') then raise exception 'Sem permissão para cadastrar o cliente'; end if;
+  -- o contato digitado no portal não é verificado: só vincula a um cliente existente quem conferiu (p_cliente)
+  if p_cliente is not null then
+    select id into v_cli from public.clientes where id = p_cliente and empresa_id = s.empresa_id;
+    if v_cli is null then raise exception 'Cliente não encontrado'; end if;
+  else
     insert into public.clientes(empresa_id, nome, email, telefone, whatsapp, cidade, observacoes)
     values (s.empresa_id, s.nome, s.email, s.telefone, s.telefone, s.cidade, 'Cadastrado pelo portal (solicitação #' || s.numero || ')')
     returning id into v_cli;
@@ -1226,8 +1268,9 @@ begin
       into l from (
         select coalesce(nullif(trim(o.motivo_falha), ''), 'Não informado') motivo, count(*) n,
                coalesce(sum(coalesce(o.consumo_real_g, 0) + coalesce(o.perdas_g, 0)), 0) g, coalesce(sum(o.horas_reais), 0) h, coalesce(sum(o.custo_real_total), 0) custo,
-               count(r.id) reimp, coalesce(sum(r.custo_real_total), 0) custo_reimp
-          from public.ordens_producao o left join public.ordens_producao r on r.reimpressao_de = o.id
+               coalesce(sum(r.n), 0) reimp, coalesce(sum(r.custo), 0) custo_reimp
+          from public.ordens_producao o
+          left join lateral (select count(*) n, coalesce(sum(custo_real_total), 0) custo from public.ordens_producao x where x.reimpressao_de = o.id) r on true
          where o.empresa_id = p_empresa and o.status = 'falha' and o.updated_at::date between p_inicio and p_fim
          group by 1) s;
 
@@ -1337,7 +1380,11 @@ begin
 end; $$;
 
 -- avisos da Fase 4 somados aos já existentes
-alter function public.minhas_notificacoes(uuid) rename to minhas_notificacoes_base;
+do $$ begin
+  if not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'minhas_notificacoes_base') then
+    alter function public.minhas_notificacoes(uuid) rename to minhas_notificacoes_base;
+  end if;
+end $$;
 create or replace function public.minhas_notificacoes(p_empresa uuid)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare r jsonb := public.minhas_notificacoes_base(p_empresa);
@@ -1373,7 +1420,7 @@ revoke all on function public.compra_mudar_status(uuid, public.status_compra, te
   public.encerrar_compra(uuid, text), public.iniciar_manutencao(uuid),
   public.concluir_manutencao(uuid, numeric, numeric, numeric, uuid, numeric, text, boolean), public.cancelar_manutencao(uuid, text),
   public.manutencao_alertas(uuid), public.criar_envio(uuid, text), public.mudar_status_envio(uuid, public.status_envio, text, text),
-  public.conferir_envio(uuid), public.portal_mudar_status(uuid, text, text), public.portal_gerar_orcamento(uuid),
+  public.conferir_envio(uuid), public.portal_mudar_status(uuid, text, text), public.portal_gerar_orcamento(uuid, uuid),
   public.relatorio(uuid, text, date, date), public.minhas_notificacoes(uuid), public.estornar_movimentacao(uuid, text),
   public.atualizar_entrega(uuid, public.status_entrega_pedido, text, text), public.portal_publico(text), public.portal_solicitar(text, jsonb),
   public.portal_acompanhar(text) from public, anon;
@@ -1381,7 +1428,7 @@ grant execute on function public.compra_mudar_status(uuid, public.status_compra,
   public.encerrar_compra(uuid, text), public.iniciar_manutencao(uuid),
   public.concluir_manutencao(uuid, numeric, numeric, numeric, uuid, numeric, text, boolean), public.cancelar_manutencao(uuid, text),
   public.manutencao_alertas(uuid), public.criar_envio(uuid, text), public.mudar_status_envio(uuid, public.status_envio, text, text),
-  public.conferir_envio(uuid), public.portal_mudar_status(uuid, text, text), public.portal_gerar_orcamento(uuid),
+  public.conferir_envio(uuid), public.portal_mudar_status(uuid, text, text), public.portal_gerar_orcamento(uuid, uuid),
   public.relatorio(uuid, text, date, date), public.minhas_notificacoes(uuid), public.estornar_movimentacao(uuid, text),
   public.atualizar_entrega(uuid, public.status_entrega_pedido, text, text) to authenticated;
 grant execute on function public.portal_publico(text), public.portal_solicitar(text, jsonb), public.portal_acompanhar(text) to anon, authenticated;

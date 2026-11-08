@@ -101,13 +101,13 @@ function DetalheCompra({ id, forns, onClose, onMudou }: { id: string; forns: For
   }, [id]);
   useEffect(() => { if (dados) setCab(dados.pc); }, [dados]);
   const pc = dados?.pc;
-  const editavel = gerencia && !!pc && ["rascunho", "solicitado"].includes(pc.status);
+  const editavel = gerencia && !!pc && pc.status === "rascunho";
   const forn = forns.find((f) => f.id === pc?.fornecedor_id);
   const mudou = () => { recarregar(); onMudou(); };
   const acao = async (fn: () => Promise<unknown>, msg: string) => { setOcupado(true); try { await fn(); toast(msg); mudou(); } catch (e) { erro(e); } finally { setOcupado(false); } };
   const status = (s: string, m?: string) => acao(() => rpc("compra_mudar_status", { p_id: id, p_status: s, p_motivo: m || null }), `Compra: ${STATUS_COMPRA[s].toLowerCase()}`);
 
-  const salvarCab = () => cab && acao(() => q(sb().from("pedidos_compra").update(pc && !["rascunho", "solicitado"].includes(pc.status)
+  const salvarCab = () => cab && acao(() => q(sb().from("pedidos_compra").update(pc && pc.status !== "rascunho"
     ? { previsao_entrega: cab.previsao_entrega || null, observacoes: cab.observacoes || null }
     : { fornecedor_id: cab.fornecedor_id || null, previsao_entrega: cab.previsao_entrega || null, frete: cab.frete || 0, desconto: cab.desconto || 0, categoria_financeira: cab.categoria_financeira,
         parcelas: cab.parcelas || 1, primeiro_vencimento: cab.primeiro_vencimento || null, forma_pagamento: cab.forma_pagamento || null, conta_id: cab.conta_id || null, observacoes: cab.observacoes || null }).eq("id", id)), "Compra salva");
@@ -146,7 +146,7 @@ function DetalheCompra({ id, forns, onClose, onMudou }: { id: string; forns: For
               {gerencia && ["rascunho", "cancelado"].includes(pc.status) && <Button size="sm" variant="ghost" onClick={() => setExcluir(true)}><Trash2 className="h-4 w-4" /></Button>}
             </div>
           </div>
-          {pc.status === "solicitado" && !aprova && <Aviso tom="amarelo">Aguardando aprovação da administração ou do financeiro.</Aviso>}
+          {pc.status === "solicitado" && <Aviso tom="amarelo">{aprova ? "Confira itens e valores e aprove." : "Aguardando aprovação da administração ou do financeiro."} Para mudar itens ou valores, volte para rascunho.</Aviso>}
           {pc.status === "aprovado" && forn?.telefone && dados.itens.length > 0 && (
             <Aviso>Envie o pedido ao fornecedor e depois clique em <b>Marcar como pedido ao fornecedor</b> (isso gera as contas a pagar).{" "}
               <a className="inline-flex items-center gap-1 font-medium underline" target="_blank" rel="noreferrer" href={linkWhats(forn.telefone, msgWhats) || "#"}><MessageCircle className="h-3.5 w-3.5" /> Mandar pelo WhatsApp</a></Aviso>)}
@@ -234,8 +234,8 @@ function DetalheCompra({ id, forns, onClose, onMudou }: { id: string; forns: For
           </Modal>
           <Confirmar aberto={!!motivo} titulo={motivo?.acao === "cancelar" ? "Cancelar compra" : "Encerrar compra"} perigo={motivo?.acao === "cancelar"} carregando={ocupado}
             confirmar={motivo?.acao === "cancelar" ? "Cancelar compra" : "Encerrar"} onCancel={() => setMotivo(null)}
-            texto={motivo?.acao === "cancelar" ? "As contas a pagar em aberto desta compra também são canceladas." : "O que faltou não será mais esperado. As contas a pagar continuam como estão: ajuste no Financeiro se o fornecedor abater o valor."}
-            onOk={() => motivo && (motivo.acao === "cancelar" ? status("cancelado", motivo.texto) : acao(() => rpc("encerrar_compra", { p_id: id, p_motivo: motivo.texto }), "Compra encerrada")).then(() => setMotivo(null))}>
+            texto={motivo?.acao === "cancelar" ? "As contas a pagar em aberto desta compra também são canceladas." : "O que faltou não será mais esperado. As parcelas em aberto são reduzidas para o valor do que chegou."}
+            onOk={() => motivo && (motivo.acao === "cancelar" ? status("cancelado", motivo.texto) : acao(async () => { const d = await rpc<number>("encerrar_compra", { p_id: id, p_motivo: motivo.texto }); if (d > 0) toast(`Já foi pago ${brl(d)} a mais: combine o crédito com o fornecedor`, "erro"); }, "Compra encerrada e parcelas ajustadas")).then(() => setMotivo(null))}>
             {motivo && <div className="mt-3"><Field label="Motivo"><Input autoFocus value={motivo.texto} onChange={(e) => setMotivo({ ...motivo, texto: e.target.value })} /></Field></div>}
           </Confirmar>
           <Confirmar aberto={excluir} titulo="Excluir compra" perigo confirmar="Excluir" onCancel={() => setExcluir(false)} texto="A compra e seus itens serão apagados."

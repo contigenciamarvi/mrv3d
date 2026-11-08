@@ -52,9 +52,13 @@ function ClientesConteudo() {
 
   const etiquetas = useMemo(() => Array.from(new Set((dados?.clientes || []).flatMap((c) => c.etiquetas || []))).sort(), [dados]);
   const filtrados = useMemo(() => {
-    const t = busca.trim().toLowerCase();
+    // sem diferença de maiúsculas e acentos; telefone e documento também batem só pelos números
+    const norm = (v: string | null | undefined) => (v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const t = norm(busca.trim());
+    const digitos = busca.replace(/\D/g, "");
     const l = (dados?.clientes || []).filter((c) => c.arquivado === arquivados && (!etiqueta || c.etiquetas?.includes(etiqueta)) &&
-      (!t || [c.nome, c.email, c.telefone, c.whatsapp, c.documento, c.cidade].some((v) => v?.toLowerCase().includes(t))));
+      (!t || [c.nome, c.email, c.telefone, c.whatsapp, c.documento, c.cidade, c.bairro, ...(c.etiquetas || [])].some((v) => norm(v).includes(t))
+          || (digitos.length >= 3 && [c.telefone, c.whatsapp, c.documento].some((v) => (v || "").replace(/\D/g, "").includes(digitos)))));
     const r = dados?.resumo || {};
     if (ordem === "recentes") l.sort((a, b) => (r[b.id]?.ultima_compra || b.created_at).localeCompare(r[a.id]?.ultima_compra || a.created_at));
     if (ordem === "maiores") l.sort((a, b) => (r[b.id]?.total_comprado || 0) - (r[a.id]?.total_comprado || 0));
@@ -96,7 +100,7 @@ function ClientesConteudo() {
       {aba === "crm" ? <Funil clientes={dados?.clientes || []} pode={pode} /> : (
         <Card>
           <div className="mb-4 flex flex-wrap gap-2">
-            <Input placeholder="Buscar por nome, telefone, e-mail, documento ou cidade" value={busca} onChange={(e) => setBusca(e.target.value)} className="min-w-60 flex-1" aria-label="Buscar" />
+            <Input placeholder="Buscar por nome, telefone, e-mail, documento, cidade ou etiqueta" value={busca} onChange={(e) => setBusca(e.target.value)} className="min-w-60 flex-1" aria-label="Buscar" />
             <Select value={etiqueta} onChange={(e) => setEtiqueta(e.target.value)} className="w-44" aria-label="Etiqueta"><option value="">Todas as etiquetas</option>{etiquetas.map((t) => <option key={t}>{t}</option>)}</Select>
             <Select value={ordem} onChange={(e) => setOrdem(e.target.value as typeof ordem)} className="w-44" aria-label="Ordenar"><option value="nome">Ordem alfabética</option><option value="recentes">Compras recentes</option><option value="maiores">Quem mais compra</option></Select>
             <Select value={arquivados ? "1" : "0"} onChange={(e) => setArquivados(e.target.value === "1")} className="w-36" aria-label="Situação"><option value="0">Ativos</option><option value="1">Arquivados</option></Select>

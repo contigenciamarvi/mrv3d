@@ -6,13 +6,13 @@ import { useApp, PageHeader, Exige } from "@/components/shell";
 import { sb, q, rpc, enviarArquivo, urlTemporaria } from "@/lib/supabase";
 import { useDados } from "@/lib/hooks";
 import { toast, erro } from "@/lib/toast";
-import { brl, num, data, dataHora, numOuNull, linkWhats, STATUS_ENVIO, MODALIDADES_ENVIO, STATUS_PAGAMENTO, UFS, baixarCsv, csvNum, cn } from "@/lib/utils";
+import { brl, num, data, dataHora, numOuNull, linkWhats, STATUS_ENVIO, MODALIDADES_ENVIO, STATUS_PAGAMENTO, baixarCsv, csvNum, cn } from "@/lib/utils";
 import { Button, Card, CardTitle, Field, Input, Select, Textarea, Grid, Modal, Table, Td, Loading, ErrorBox, Empty, Badge, tomStatus, Checkbox, Confirmar, Aviso, Tabs, Kpi } from "@/components/ui";
-import { CampoCep } from "@/components/cep";
+import { CamposEndereco } from "@/components/cep";
 
 type PedidoResumo = { id: string; numero: number; descricao: string | null; valor_total: number; valor_pago: number; status_pagamento: string; status_producao: string; status_entrega: string;
   data_entrega: string | null; clientes: { nome: string; whatsapp: string | null; telefone: string | null } | null };
-export type Envio = { id: string; numero: number; pedido_id: string; status: string; modalidade: string; destinatario: string | null; telefone: string | null; endereco: string | null; cidade: string | null;
+export type Envio = { id: string; numero: number; pedido_id: string; status: string; modalidade: string; destinatario: string | null; telefone: string | null; endereco: string | null; numero_endereco?: string | null; complemento?: string | null; bairro?: string | null; cidade: string | null;
   uf: string | null; cep: string | null; peso_g: number | null; altura_cm: number | null; largura_cm: number | null; comprimento_cm: number | null; volumes: number; frete_custo: number; frete_cobrado: number;
   transportadora: string | null; servico: string | null; codigo_rastreio: string | null; data_postagem: string | null; previsao_entrega: string | null; entregue_em: string | null; recebido_por: string | null;
   comprovante_path: string | null; conferido_em: string | null; observacoes: string | null; lancamento_id: string | null; created_at: string; pedidos: PedidoResumo | null };
@@ -116,7 +116,7 @@ function DetalheEnvio({ id, edita, onClose, onMudou }: { id: string; edita: bool
     if (!f) return; setOcupado(true);
     try {
       await q(sb().from("envios").update(fechado ? { observacoes: f.observacoes || null, recebido_por: f.recebido_por || null } : {
-        modalidade: f.modalidade, destinatario: f.destinatario || null, telefone: f.telefone || null, endereco: f.endereco || null, cidade: f.cidade || null, uf: f.uf || null, cep: f.cep || null,
+        modalidade: f.modalidade, destinatario: f.destinatario || null, telefone: f.telefone || null, endereco: f.endereco || null, numero_endereco: f.numero_endereco || null, complemento: f.complemento || null, bairro: f.bairro || null, cidade: f.cidade || null, uf: f.uf || null, cep: f.cep || null,
         peso_g: f.peso_g, altura_cm: f.altura_cm, largura_cm: f.largura_cm, comprimento_cm: f.comprimento_cm, volumes: f.volumes || 1, frete_custo: f.frete_custo || 0, frete_cobrado: f.frete_cobrado || 0,
         transportadora: f.transportadora || null, servico: f.servico || null, codigo_rastreio: f.codigo_rastreio?.trim() || null, previsao_entrega: f.previsao_entrega || null, recebido_por: f.recebido_por || null,
         observacoes: f.observacoes || null }).eq("id", id));
@@ -179,14 +179,11 @@ function DetalheEnvio({ id, edita, onClose, onMudou }: { id: string; edita: bool
 
           <fieldset disabled={!edita} className="space-y-4">
             <div><h3 className="mb-2 text-sm font-semibold">Destinatário</h3>
-              <Grid cols={3}>
+              <div className="space-y-3"><Grid>
                 <Field label="Nome"><Input disabled={fechado} value={f.destinatario || ""} onChange={(ev) => setF({ ...f, destinatario: ev.target.value })} /></Field>
                 <Field label="Telefone"><Input disabled={fechado} value={f.telefone || ""} onChange={(ev) => setF({ ...f, telefone: ev.target.value })} /></Field>
-                <CampoCep disabled={fechado} value={f.cep} onChange={(v) => setF((x) => x && { ...x, cep: v })} onEndereco={(e) => setF((x) => x && { ...x, endereco: e.endereco || x.endereco, cidade: e.cidade, uf: e.uf })} />
-                <Field label="Endereço"><Input disabled={fechado} value={f.endereco || ""} onChange={(ev) => setF({ ...f, endereco: ev.target.value })} /></Field>
-                <Field label="Cidade"><Input disabled={fechado} value={f.cidade || ""} onChange={(ev) => setF({ ...f, cidade: ev.target.value })} /></Field>
-                <Field label="UF"><Select disabled={fechado} value={f.uf || ""} onChange={(ev) => setF({ ...f, uf: ev.target.value || null })}><option value="">—</option>{UFS.map((u) => <option key={u}>{u}</option>)}</Select></Field>
-              </Grid></div>
+              </Grid>
+              <CamposEndereco disabled={fechado} v={f} set={(p) => setF((x) => x && { ...x, ...p })} /></div></div>
             <div><h3 className="mb-2 text-sm font-semibold">Embalagem e frete</h3>
               <Grid cols={4}>
                 <Field label="Modalidade"><Select disabled={fechado || !["separacao", "conferencia", "embalado"].includes(e.status)} value={f.modalidade} onChange={(ev) => setF({ ...f, modalidade: ev.target.value })}>{Object.entries(MODALIDADES_ENVIO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>

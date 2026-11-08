@@ -1,7 +1,8 @@
 import { brl, num, data } from "@/lib/utils";
+import { formatarEndereco } from "@/components/cep";
 
 export type DocOrcamento = {
-  empresa: { nome: string; whatsapp?: string | null; email?: string | null; cidade?: string | null; uf?: string | null; documento?: string | null; endereco?: string | null };
+  empresa: { nome: string; whatsapp?: string | null; email?: string | null; cidade?: string | null; uf?: string | null; documento?: string | null; endereco?: string | null; numero_endereco?: string | null; complemento?: string | null; bairro?: string | null };
   logo?: string | null;
   orcamento: { numero: string; titulo: string; descricao?: string | null; validade?: string | null; prazo_entrega_dias?: number | null; subtotal: number; desconto: number; frete: number; total: number;
     observacoes?: string | null; condicoes?: string | null; cliente?: string | null; revisao?: number; emitido?: string | null };
@@ -16,7 +17,7 @@ export function DocumentoOrcamento({ d }: { d: DocOrcamento }) {
         <div className="flex items-center gap-3">
           {d.logo ? <img src={d.logo} alt="" className="h-14 w-14 rounded object-contain" /> : <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-600 font-bold text-white">{d.empresa.nome.slice(0, 2).toUpperCase()}</div>}
           <div><div className="text-lg font-semibold">{d.empresa.nome}</div>
-            <div className="text-xs text-slate-500">{[d.empresa.documento, d.empresa.endereco, [d.empresa.cidade, d.empresa.uf].filter(Boolean).join("/")].filter(Boolean).join(" · ")}</div>
+            <div className="text-xs text-slate-500">{[d.empresa.documento, formatarEndereco(d.empresa, false)].filter(Boolean).join(" · ")}</div>
             <div className="text-xs text-slate-500">{[d.empresa.whatsapp, d.empresa.email].filter(Boolean).join(" · ")}</div></div>
         </div>
         <div className="text-right"><div className="text-xs uppercase tracking-wide text-slate-500">Orçamento</div><div className="text-xl font-semibold">{o.numero}</div>

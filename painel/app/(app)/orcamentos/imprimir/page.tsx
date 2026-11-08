@@ -18,7 +18,7 @@ export default function Imprimir() {
     (async () => {
       const o = await q<Record<string, never>>(sb().from("orcamentos").select("*, clientes(nome)").eq("id", id).single());
       const itens = await q<Record<string, never>[]>(sb().from("orcamento_itens").select("descricao,cor,quantidade,preco_unitario,preco_total,materiais(nome)").eq("orcamento_id", id).order("ordem"));
-      const e = await q<Record<string, string | null>>(sb().from("empresas").select("nome,whatsapp,email,cidade,uf,documento,endereco").eq("id", app.empresa.id).single());
+      const e = await q<Record<string, string | null>>(sb().from("empresas").select("nome,whatsapp,email,cidade,uf,documento,endereco,numero_endereco,complemento,bairro").eq("id", app.empresa.id).single());
       const logo = app.config.logo_path ? await urlTemporaria(app.config.logo_path).catch(() => null) : null;
       setDoc({
         empresa: e as DocOrcamento["empresa"], logo,

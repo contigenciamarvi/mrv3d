@@ -5,9 +5,9 @@ import { useApp, PageHeader, Exige } from "@/components/shell";
 import { sb, q, enviarArquivo, urlTemporaria } from "@/lib/supabase";
 import { useDados } from "@/lib/hooks";
 import { toast, erro } from "@/lib/toast";
-import { brl, dataHora, numOuNull, UFS } from "@/lib/utils";
+import { brl, dataHora, numOuNull } from "@/lib/utils";
 import { Button, Card, Field, Input, Select, Textarea, Grid, Table, Td, Empty, Badge, Tabs, Checkbox, Aviso, Confirmar } from "@/components/ui";
-import { CampoCep } from "@/components/cep";
+import { CamposEndereco } from "@/components/cep";
 
 type Aba = "empresa" | "precificacao" | "preferencias" | "links" | "dados" | "seguranca";
 
@@ -34,7 +34,7 @@ function Empresa() {
   const [logo, setLogo] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   useEffect(() => {
-    q<Record<string, string | null>>(sb().from("empresas").select("nome,razao_social,documento,responsavel,email,telefone,whatsapp,endereco,cidade,uf,cep").eq("id", app.empresa.id).single())
+    q<Record<string, string | null>>(sb().from("empresas").select("nome,razao_social,documento,responsavel,email,telefone,whatsapp,endereco,numero_endereco,complemento,bairro,cidade,uf,cep").eq("id", app.empresa.id).single())
       .then((e) => setF(Object.fromEntries(Object.entries(e).map(([k, v]) => [k, v ?? ""])))).catch(erro);
     if (app.config.logo_path) urlTemporaria(app.config.logo_path).then(setLogo).catch(() => {});
   }, [app.empresa.id, app.config.logo_path]);
@@ -52,10 +52,9 @@ function Empresa() {
           <Grid cols={3}>
             {campo("nome", "Nome fantasia", { required: true })}{campo("razao_social", "Razão social")}{campo("documento", "CPF/CNPJ")}
             {campo("responsavel", "Responsável")}{campo("email", "E-mail", { type: "email" })}{campo("whatsapp", "WhatsApp")}
-            {campo("telefone", "Telefone")}<CampoCep value={f.cep} onChange={(v) => setF((x) => x && ({ ...x, cep: v }))} onEndereco={(e) => setF((x) => x && ({ ...x, endereco: e.endereco || x.endereco, cidade: e.cidade, uf: e.uf }))} />{campo("cidade", "Cidade")}
+            {campo("telefone", "Telefone")}
           </Grid>
-          {campo("endereco", "Endereço")}
-          <Field label="Estado"><Select value={f.uf} onChange={(e) => setF({ ...f, uf: e.target.value })} className="w-32"><option value="">—</option>{UFS.map((u) => <option key={u}>{u}</option>)}</Select></Field>
+          <CamposEndereco v={f} set={(p) => setF((x) => x && ({ ...x, ...(p as Record<string, string>) }))} />
           <p className="text-xs text-slate-500">Estes dados aparecem nos orçamentos e servem como dados de cobrança da assinatura.</p>
           <div className="flex justify-end"><Button type="submit" loading={salvando}>Salvar</Button></div>
         </fieldset>

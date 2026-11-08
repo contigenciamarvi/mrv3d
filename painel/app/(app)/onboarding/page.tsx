@@ -5,9 +5,9 @@ import { Check, Plus, Trash2, Upload } from "lucide-react";
 import { useApp } from "@/components/shell";
 import { sb, rpc, q, enviarArquivo } from "@/lib/supabase";
 import { toast, erro } from "@/lib/toast";
-import { cn, numOuNull, MATERIAIS_3D, TECNOLOGIAS, UFS, brl } from "@/lib/utils";
+import { cn, numOuNull, MATERIAIS_3D, TECNOLOGIAS, brl } from "@/lib/utils";
 import { Button, Card, Field, Input, Select, Textarea, Grid, Aviso } from "@/components/ui";
-import { CampoCep } from "@/components/cep";
+import { CamposEndereco } from "@/components/cep";
 
 const ETAPAS = ["Empresa", "Impressoras", "Materiais", "Custos", "Preferências"];
 type Imp = { fabricante: string; modelo: string; nome: string; numero_serie: string; tecnologia: string; quantidade: string; potencia_w: string; custo_aquisicao: string; vida_util_horas: string; custo_manutencao_hora: string; volume: string };
@@ -28,7 +28,7 @@ export default function Onboarding() {
 
   useEffect(() => {
     (async () => {
-      const e = await q<Record<string, string>>(sb().from("empresas").select("nome,documento,email,telefone,whatsapp,endereco,cidade,uf,cep").eq("id", app.empresa.id).single());
+      const e = await q<Record<string, string>>(sb().from("empresas").select("nome,documento,email,telefone,whatsapp,endereco,numero_endereco,complemento,bairro,cidade,uf,cep").eq("id", app.empresa.id).single());
       setEmp(Object.fromEntries(Object.entries(e).map(([k, v]) => [k, v ?? ""])));
       const c = app.config;
       setCfg({
@@ -57,9 +57,9 @@ export default function Onboarding() {
     try {
       if (etapa === 0) {
         if (!emp.nome?.trim()) throw new Error("Informe o nome fantasia");
-        const { nome, documento, email, telefone, whatsapp, endereco, cidade, uf, cep } = emp;
+        const { nome, documento, email, telefone, whatsapp, endereco, numero_endereco, complemento, bairro, cidade, uf, cep } = emp;
         await q(sb().from("empresas").update({ nome: nome.trim(), documento: documento || null, email: email || null, telefone: telefone || null,
-          whatsapp: whatsapp || null, endereco: endereco || null, cidade: cidade || null, uf: uf || null, cep: cep || null }).eq("id", app.empresa.id));
+          whatsapp: whatsapp || null, endereco: endereco || null, numero_endereco: numero_endereco || null, complemento: complemento || null, bairro: bairro || null, cidade: cidade || null, uf: uf || null, cep: cep || null }).eq("id", app.empresa.id));
         if (logo) {
           const path = await enviarArquivo(app.empresa.id, "logo", logo);
           await q(sb().from("empresa_config").update({ logo_path: path }).eq("empresa_id", app.empresa.id));
@@ -150,13 +150,8 @@ export default function Onboarding() {
               {campoEmp("email", "E-mail", { type: "email" })}
               {campoEmp("whatsapp", "WhatsApp", { inputMode: "tel" })}
               {campoEmp("telefone", "Telefone", { inputMode: "tel" })}
-              <CampoCep value={emp.cep} onChange={(v) => setEmp((x) => ({ ...x, cep: v }))} onEndereco={(e) => setEmp((x) => ({ ...x, endereco: e.endereco || x.endereco || "", cidade: e.cidade, uf: e.uf }))} />
             </Grid>
-            {campoEmp("endereco", "Endereço")}
-            <Grid>
-              {campoEmp("cidade", "Cidade")}
-              <Field label="Estado"><Select value={emp.uf || ""} onChange={(e) => setEmp({ ...emp, uf: e.target.value })}><option value="">—</option>{UFS.map((u) => <option key={u}>{u}</option>)}</Select></Field>
-            </Grid>
+            <CamposEndereco v={emp} set={(p) => setEmp((x) => ({ ...x, ...(p as Record<string, string>) }))} />
             <Field label="Logotipo" hint="PNG, JPG ou WEBP. Aparece nos orçamentos.">
               <label className="flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 text-sm text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
                 <Upload className="h-4 w-4" /> {logo ? logo.name : "Escolher imagem"}

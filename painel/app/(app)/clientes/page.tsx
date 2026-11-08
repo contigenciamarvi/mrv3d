@@ -6,18 +6,18 @@ import { useApp, PageHeader, Exige } from "@/components/shell";
 import { sb, q } from "@/lib/supabase";
 import { useDados, useParam } from "@/lib/hooks";
 import { toast, erro } from "@/lib/toast";
-import { brl, data, linkWhats, numOuNull, ETAPAS_CRM, STATUS_PEDIDO, STATUS_ORCAMENTO, UFS, cn } from "@/lib/utils";
+import { brl, data, linkWhats, numOuNull, ETAPAS_CRM, STATUS_PEDIDO, STATUS_ORCAMENTO, cn } from "@/lib/utils";
 import { Button, Card, Field, Input, Select, Textarea, Grid, Modal, Table, Td, Loading, ErrorBox, Empty, Badge, tomStatus, Tabs, Kpi, Confirmar, Paginacao } from "@/components/ui";
-import { CampoCep } from "@/components/cep";
+import { CamposEndereco, formatarEndereco } from "@/components/cep";
 
 type Cliente = {
   id: string; nome: string; tipo_pessoa: string; documento: string | null; telefone: string | null; whatsapp: string | null; email: string | null;
-  endereco: string | null; cidade: string | null; uf: string | null; cep: string | null; observacoes: string | null; observacoes_internas: string | null;
+  endereco: string | null; numero_endereco: string | null; complemento: string | null; bairro: string | null; cidade: string | null; uf: string | null; cep: string | null; observacoes: string | null; observacoes_internas: string | null;
   etiquetas: string[]; margem_pct: number | null; arquivado: boolean; created_at: string;
 };
 type Resumo = { cliente_id: string; pedidos: number; total_comprado: number; total_pago: number; ticket_medio: number | null; ultima_compra: string | null };
 type Oport = { id: string; cliente_id: string; titulo: string; etapa: string; valor_estimado: number | null; motivo_perda: string | null; observacoes: string | null; updated_at: string; clientes?: { nome: string } };
-const vazio = { nome: "", tipo_pessoa: "fisica", documento: "", telefone: "", whatsapp: "", email: "", endereco: "", cidade: "", uf: "", cep: "", observacoes: "", observacoes_internas: "", etiquetas: "", margem_pct: "" };
+const vazio = { nome: "", tipo_pessoa: "fisica", documento: "", telefone: "", whatsapp: "", email: "", endereco: "", numero_endereco: "", complemento: "", bairro: "", cidade: "", uf: "", cep: "", observacoes: "", observacoes_internas: "", etiquetas: "", margem_pct: "" };
 const POR_PAGINA = 25;
 
 export default function Clientes() {
@@ -72,7 +72,7 @@ function ClientesConteudo() {
     try {
       const reg = {
         nome: form.nome.trim(), tipo_pessoa: form.tipo_pessoa, documento: form.documento || null, telefone: form.telefone || null, whatsapp: form.whatsapp || null,
-        email: form.email || null, endereco: form.endereco || null, cidade: form.cidade || null, uf: form.uf || null, cep: form.cep || null,
+        email: form.email || null, endereco: form.endereco || null, numero_endereco: form.numero_endereco || null, complemento: form.complemento || null, bairro: form.bairro || null, cidade: form.cidade || null, uf: form.uf || null, cep: form.cep || null,
         observacoes: form.observacoes || null, observacoes_internas: form.observacoes_internas || null, margem_pct: numOuNull(form.margem_pct),
         etiquetas: form.etiquetas.split(",").map((x) => x.trim()).filter(Boolean),
       };
@@ -142,12 +142,7 @@ function ClientesConteudo() {
               <Field label="Telefone"><Input inputMode="tel" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} /></Field>
               <Field label="E-mail"><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
             </Grid>
-            <Field label="Endereço"><Input value={form.endereco} onChange={(e) => setForm({ ...form, endereco: e.target.value })} /></Field>
-            <Grid cols={3}>
-              <Field label="Cidade"><Input value={form.cidade} onChange={(e) => setForm({ ...form, cidade: e.target.value })} /></Field>
-              <Field label="Estado"><Select value={form.uf} onChange={(e) => setForm({ ...form, uf: e.target.value })}><option value="">—</option>{UFS.map((u) => <option key={u}>{u}</option>)}</Select></Field>
-              <CampoCep value={form.cep} onChange={(v) => setForm((x) => x && { ...x, cep: v })} onEndereco={(e) => setForm((x) => x && { ...x, endereco: e.endereco || x.endereco, cidade: e.cidade, uf: e.uf })} />
-            </Grid>
+            <CamposEndereco v={form} set={(p) => setForm((x) => x && { ...x, ...(p as Record<string, string>) })} />
             <Grid>
               <Field label="Etiquetas" hint="Separe por vírgula: ex. revenda, cosplay"><Input value={form.etiquetas} onChange={(e) => setForm({ ...form, etiquetas: e.target.value })} list="etiquetas-cli" /></Field>
               {(app.pode("descontos_aprovar") || app.pode("config_editar")) && <Field label="Margem especial (%)" hint="Opcional. Substitui a margem padrão nos orçamentos"><Input inputMode="decimal" value={form.margem_pct} onChange={(e) => setForm({ ...form, margem_pct: e.target.value })} /></Field>}
@@ -217,7 +212,7 @@ function DetalheCliente({ c, resumo, pode, onClose, onEditar, onArquivar, onExcl
       ) : (
         <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
           {([["Tipo", c.tipo_pessoa === "juridica" ? "Pessoa jurídica" : "Pessoa física"], ["Documento", c.documento], ["WhatsApp", c.whatsapp], ["Telefone", c.telefone], ["E-mail", c.email],
-            ["Endereço", [c.endereco, c.cidade, c.uf, c.cep].filter(Boolean).join(", ")], ["Etiquetas", c.etiquetas?.join(", ")], ["Margem especial", c.margem_pct != null ? `${c.margem_pct}%` : null],
+            ["Endereço", formatarEndereco(c)], ["Etiquetas", c.etiquetas?.join(", ")], ["Margem especial", c.margem_pct != null ? `${c.margem_pct}%` : null],
             ["Cliente desde", data(c.created_at)], ["Observações", c.observacoes], ["Observações internas", c.observacoes_internas]] as [string, string | null][]).map(([k, v]) => (
             <div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd className="whitespace-pre-wrap">{v || "—"}</dd></div>
           ))}

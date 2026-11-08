@@ -6,11 +6,12 @@ import { sb, q } from "@/lib/supabase";
 import { useParam } from "@/lib/hooks";
 import { num, data, erroMsg, MODALIDADES_ENVIO } from "@/lib/utils";
 import { Button, Loading, ErrorBox } from "@/components/ui";
+import { formatarEndereco } from "@/components/cep";
 
-type E = { numero: number; modalidade: string; destinatario: string | null; telefone: string | null; endereco: string | null; cidade: string | null; uf: string | null; cep: string | null;
+type E = { numero: number; modalidade: string; destinatario: string | null; telefone: string | null; endereco: string | null; numero_endereco: string | null; complemento: string | null; bairro: string | null; cidade: string | null; uf: string | null; cep: string | null;
   peso_g: number | null; altura_cm: number | null; largura_cm: number | null; comprimento_cm: number | null; volumes: number; transportadora: string | null; servico: string | null;
   codigo_rastreio: string | null; observacoes: string | null; pedidos: { numero: number; descricao: string | null } | null };
-type Emp = { nome: string; endereco: string | null; cidade: string | null; uf: string | null; cep: string | null; telefone: string | null; whatsapp: string | null };
+type Emp = { nome: string; endereco: string | null; numero_endereco: string | null; complemento: string | null; bairro: string | null; cidade: string | null; uf: string | null; cep: string | null; telefone: string | null; whatsapp: string | null };
 
 /** Etiqueta de envio (10 × 15 cm) — impressão pelo navegador. Não substitui a etiqueta oficial dos Correios. */
 export default function Etiqueta() {
@@ -21,8 +22,8 @@ export default function Etiqueta() {
   useEffect(() => {
     if (!id) return;
     Promise.all([
-      q<E>(sb().from("envios").select("numero,modalidade,destinatario,telefone,endereco,cidade,uf,cep,peso_g,altura_cm,largura_cm,comprimento_cm,volumes,transportadora,servico,codigo_rastreio,observacoes,pedidos(numero,descricao)").eq("id", id).single()),
-      q<Emp>(sb().from("empresas").select("nome,endereco,cidade,uf,cep,telefone,whatsapp").eq("id", app.empresa.id).single()),
+      q<E>(sb().from("envios").select("numero,modalidade,destinatario,telefone,endereco,numero_endereco,complemento,bairro,cidade,uf,cep,peso_g,altura_cm,largura_cm,comprimento_cm,volumes,transportadora,servico,codigo_rastreio,observacoes,pedidos(numero,descricao)").eq("id", id).single()),
+      q<Emp>(sb().from("empresas").select("nome,endereco,numero_endereco,complemento,bairro,cidade,uf,cep,telefone,whatsapp").eq("id", app.empresa.id).single()),
     ]).then(([e, emp]) => setD({ e, emp })).catch((x) => setFalha(erroMsg(x)));
   }, [id, app.empresa.id]);
   if (falha) return <ErrorBox erro={falha} />;
@@ -42,7 +43,8 @@ export default function Etiqueta() {
           <div className="border-b-2 border-black py-2">
             <div className="text-xs font-bold uppercase">Destinatário</div>
             <div className="text-base font-bold">{e.destinatario}</div>
-            <div>{e.endereco}</div>
+            <div>{[e.endereco, e.numero_endereco].filter(Boolean).join(", ")}{e.complemento ? ` - ${e.complemento}` : ""}</div>
+            {e.bairro && <div>{e.bairro}</div>}
             <div>{e.cidade}{e.uf ? ` / ${e.uf}` : ""}</div>
             <div className="text-lg font-bold">CEP {e.cep || "________"}</div>
             {e.telefone && <div className="text-xs">Tel. {e.telefone}</div>}
@@ -50,7 +52,7 @@ export default function Etiqueta() {
           <div className="border-b-2 border-black py-2 text-xs">
             <div className="font-bold uppercase">Remetente</div>
             <div className="font-semibold">{emp.nome}</div>
-            <div>{emp.endereco}</div><div>{emp.cidade}{emp.uf ? ` / ${emp.uf}` : ""} {emp.cep ? `· CEP ${emp.cep}` : ""}</div>
+            <div>{formatarEndereco(emp)}</div>
             {(emp.telefone || emp.whatsapp) && <div>Tel. {emp.telefone || emp.whatsapp}</div>}
           </div>
           <div className="flex justify-between pt-2 text-xs">

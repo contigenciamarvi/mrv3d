@@ -68,14 +68,15 @@ function ConfigForm({ aba }: { aba: "precificacao" | "preferencias" }) {
   const c = app.config as unknown as Record<string, unknown>;
   const [f, setF] = useState<Record<string, string>>(() => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v == null ? "" : typeof v === "number" ? String(v).replace(".", ",") : String(v)])));
   const [salvando, setSalvando] = useState(false);
-  const NUM = ["energia_kwh", "mao_obra_hora", "margem_pct", "impostos_pct", "taxas_pct", "desperdicio_pct", "custos_fixos_mensais", "embalagem_padrao", "desconto_livre_pct", "prazo_padrao_dias", "validade_orcamento_dias"];
+  const NUM = ["horas_produtivas_mes", "falha_pct", "taxa_sucesso_pct", "energia_kwh", "mao_obra_hora", "margem_pct", "impostos_pct", "taxas_pct", "desperdicio_pct", "custos_fixos_mensais", "embalagem_padrao", "desconto_livre_pct", "prazo_padrao_dias", "validade_orcamento_dias"];
   const campo = (k: string, l: string, hint?: string, suf?: string) => <Field label={l} hint={hint}><div className="relative"><Input inputMode="decimal" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} className={suf ? "pr-14" : ""} />{suf && <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">{suf}</span>}</div></Field>;
   const soma = (numOuNull(f.margem_pct) || 0) + (numOuNull(f.impostos_pct) || 0) + (numOuNull(f.taxas_pct) || 0);
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault(); setSalvando(true);
     try {
       const reg: Record<string, unknown> = {};
-      const campos = aba === "precificacao" ? ["energia_kwh", "mao_obra_hora", "margem_pct", "impostos_pct", "taxas_pct", "desperdicio_pct", "custos_fixos_mensais", "embalagem_padrao", "desconto_livre_pct"]
+      const campos = aba === "precificacao" ? ["energia_kwh", "mao_obra_hora", "margem_pct", "impostos_pct", "taxas_pct", "desperdicio_pct", "custos_fixos_mensais", "embalagem_padrao", "desconto_livre_pct",
+          "horas_produtivas_mes", "falha_metodo", "falha_pct", "taxa_sucesso_pct"]
         : ["fuso", "prefixo_pedido", "prefixo_orcamento", "prazo_padrao_dias", "validade_orcamento_dias", "msg_orcamento", "msg_pedido"];
       for (const k of campos) reg[k] = NUM.includes(k) ? numOuNull(f[k]) ?? 0 : f[k];
       await q(sb().from("empresa_config").update(reg).eq("empresa_id", app.empresa.id));
@@ -92,9 +93,16 @@ function ConfigForm({ aba }: { aba: "precificacao" | "preferencias" }) {
               {campo("margem_pct", "Margem de lucro padrão", "Clientes, produtos e materiais podem ter margem própria", "%")}{campo("impostos_pct", "Impostos sobre a venda", undefined, "%")}{campo("taxas_pct", "Taxas de pagamento", undefined, "%")}
               {campo("custos_fixos_mensais", "Custos fixos mensais", "Usado no lucro líquido estimado", "R$")}{campo("embalagem_padrao", "Embalagem padrão por item", "Preenche o item novo do orçamento", "R$")}
               {campo("desconto_livre_pct", "Desconto livre até", "Acima disso, só quem pode aprovar descontos", "%")}
+              {campo("horas_produtivas_mes", "Horas produtivas por mês", "Com valor > 0, os custos fixos são rateados por hora de impressão no preço", "h")}
+            </Grid>
+            <Grid cols={3}>
+              <Field label="Reserva para falhas" hint="Um método só, para não contar duas vezes"><Select value={f.falha_metodo || "nenhum"} onChange={(e) => setF({ ...f, falha_metodo: e.target.value })}>
+                <option value="nenhum">Não reservar</option><option value="percentual">Percentual sobre o custo de fabricação</option><option value="sucesso">Pela taxa de sucesso das impressões</option></Select></Field>
+              {f.falha_metodo === "percentual" && campo("falha_pct", "Reserva para falhas", "Somada ao custo de fabricação", "%")}
+              {f.falha_metodo === "sucesso" && campo("taxa_sucesso_pct", "Taxa de sucesso", "Custo esperado = custo da tentativa ÷ taxa (tentativas independentes, custo parecido)", "%")}
             </Grid>
             {soma >= 100 ? <Aviso tom="vermelho">Margem + impostos + taxas = {soma}%. Precisa ser menor que 100%.</Aviso>
-              : <Aviso>Preço = custo ÷ (1 − {soma.toLocaleString("pt-BR")}%). Um custo de R$ 10,00 vira <b>{brl(10 / (1 - soma / 100))}</b>. Custos fixos ficam fora do preço unitário para não serem contados duas vezes.</Aviso>}
+              : <Aviso>Preço = custo ÷ (1 − {soma.toLocaleString("pt-BR")}%). Um custo de R$ 10,00 vira <b>{brl(10 / (1 - soma / 100))}</b>. Custos fixos só entram no preço quando você informa as horas produtivas do mês (e nunca no custo variável, para não serem contados duas vezes no resultado).</Aviso>}
           </> : <>
             <Grid cols={3}>
               <Field label="Moeda"><Input value="Real (BRL)" disabled /></Field>

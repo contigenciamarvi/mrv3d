@@ -22,7 +22,7 @@ const MENU: { href: string; label: string; icon: typeof LayoutDashboard; pronto:
   { href: "/cobrancas/", label: "Cobranças", icon: Receipt, pronto: true, papeis: ["proprietario", "administrador", "financeiro", "suporte"] },
   { href: "#", label: "Financeiro SaaS", icon: Wallet, pronto: false },
   { href: "#", label: "Relatórios", icon: BarChart3, pronto: false },
-  { href: "#", label: "Uso da Plataforma", icon: Gauge, pronto: false },
+  { href: "/uso/", label: "Uso da Plataforma", icon: Gauge, pronto: true },
   { href: "#", label: "Suporte", icon: LifeBuoy, pronto: false },
   { href: "#", label: "Notificações", icon: Bell, pronto: false },
   { href: "#", label: "Integrações", icon: Plug, pronto: false },

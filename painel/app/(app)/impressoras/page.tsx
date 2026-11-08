@@ -11,12 +11,12 @@ import { Button, Card, Field, Input, Select, Textarea, Grid, Modal, Table, Td, L
 type Impressora = {
   id: string; nome: string; fabricante: string | null; modelo: string | null; numero_serie: string | null; tecnologia: string;
   volume_x: number | null; volume_y: number | null; volume_z: number | null; materiais_compativeis: string[]; diametro_filamento: number | null;
-  extrusores: number; potencia_w: number; custo_aquisicao: number; data_aquisicao: string | null; vida_util_horas: number; custo_manutencao_hora: number;
+  extrusores: number; potencia_w: number; custo_aquisicao: number; data_aquisicao: string | null; vida_util_horas: number; custo_manutencao_hora: number; valor_residual: number; custo_operacional_hora: number;
   custo_hora: number; horas_acumuladas: number; localizacao: string | null; operador_id: string | null; status: string; observacoes: string | null;
 };
 const CAMPOS = ["nome", "fabricante", "modelo", "numero_serie", "tecnologia", "volume_x", "volume_y", "volume_z", "materiais_compativeis", "diametro_filamento", "extrusores",
-  "potencia_w", "custo_aquisicao", "data_aquisicao", "vida_util_horas", "custo_manutencao_hora", "horas_acumuladas", "localizacao", "operador_id", "status", "observacoes"] as const;
-const NUMEROS = ["volume_x", "volume_y", "volume_z", "diametro_filamento", "extrusores", "potencia_w", "custo_aquisicao", "vida_util_horas", "custo_manutencao_hora", "horas_acumuladas"];
+  "potencia_w", "custo_aquisicao", "data_aquisicao", "vida_util_horas", "custo_manutencao_hora", "valor_residual", "custo_operacional_hora", "horas_acumuladas", "localizacao", "operador_id", "status", "observacoes"] as const;
+const NUMEROS = ["volume_x", "volume_y", "volume_z", "diametro_filamento", "extrusores", "potencia_w", "custo_aquisicao", "vida_util_horas", "custo_manutencao_hora", "valor_residual", "custo_operacional_hora", "horas_acumuladas"];
 
 export default function Impressoras() { return <Exige perm="impressoras_ver"><Conteudo /></Exige>; }
 
@@ -60,7 +60,7 @@ function Conteudo() {
         else if (NUMEROS.includes(k)) reg[k] = numOuNull(form[k]);
         else reg[k] = form[k] || null;
       }
-      for (const k of ["potencia_w", "custo_aquisicao", "custo_manutencao_hora", "horas_acumuladas"]) reg[k] = reg[k] ?? 0;
+      for (const k of ["potencia_w", "custo_aquisicao", "custo_manutencao_hora", "valor_residual", "custo_operacional_hora", "horas_acumuladas"]) reg[k] = reg[k] ?? 0;
       reg.extrusores = reg.extrusores || 1; reg.vida_util_horas = reg.vida_util_horas || 5000;
       if (editId) await q(sb().from("impressoras").update(reg).eq("id", editId));
       else await q(sb().from("impressoras").insert({ ...reg, empresa_id: app.empresa.id }));
@@ -75,7 +75,7 @@ function Conteudo() {
     try { await q(sb().from("impressoras").delete().eq("id", excluir.id)); toast("Impressora excluída"); setExcluir(null); recarregar(); } catch (e) { erro(e); }
   };
   const contagem = (s: string) => (dados?.imps || []).filter((i) => i.status === s).length;
-  const custoPrev = form ? ((numOuNull(form.custo_aquisicao) || 0) / (numOuNull(form.vida_util_horas) || 5000) + (numOuNull(form.custo_manutencao_hora) || 0)) : 0;
+  const custoPrev = form ? (((numOuNull(form.custo_aquisicao) || 0) - (numOuNull(form.valor_residual) || 0)) / (numOuNull(form.vida_util_horas) || 5000) + (numOuNull(form.custo_manutencao_hora) || 0) + (numOuNull(form.custo_operacional_hora) || 0)) : 0;
 
   return (
     <>
@@ -138,6 +138,8 @@ function Conteudo() {
             <Field label="Custo de aquisição (R$)"><Input inputMode="decimal" value={form.custo_aquisicao} onChange={(e) => setForm({ ...form, custo_aquisicao: e.target.value })} /></Field>
             <Field label="Vida útil (horas)"><Input inputMode="numeric" value={form.vida_util_horas} onChange={(e) => setForm({ ...form, vida_util_horas: e.target.value })} /></Field>
             <Field label="Manutenção (R$/hora)"><Input inputMode="decimal" value={form.custo_manutencao_hora} onChange={(e) => setForm({ ...form, custo_manutencao_hora: e.target.value })} /></Field>
+            <Field label="Valor residual (R$)" hint="Quanto vale ao fim da vida útil"><Input inputMode="decimal" value={form.valor_residual} onChange={(e) => setForm({ ...form, valor_residual: e.target.value })} /></Field>
+            <Field label="Custo operacional extra (R$/h)" hint="Ex.: peças de desgaste, aluguel do espaço"><Input inputMode="decimal" value={form.custo_operacional_hora} onChange={(e) => setForm({ ...form, custo_operacional_hora: e.target.value })} /></Field>
             <Field label="Data de aquisição"><Input type="date" value={form.data_aquisicao} onChange={(e) => setForm({ ...form, data_aquisicao: e.target.value })} /></Field>
             <Field label="Horas acumuladas"><Input inputMode="decimal" value={form.horas_acumuladas} onChange={(e) => setForm({ ...form, horas_acumuladas: e.target.value })} /></Field>
             <Field label="Localização"><Input value={form.localizacao} onChange={(e) => setForm({ ...form, localizacao: e.target.value })} /></Field>

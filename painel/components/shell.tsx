@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, FileText, ShoppingCart, Factory, Printer, Boxes, Package, Truck, Wallet, Wrench, Send,
   BarChart3, Store, UserCog, Plug, Settings, CreditCard, PanelLeftClose, PanelLeftOpen, Moon, Sun, LogOut, Search,
-  Loader2, Bell, ChevronRight, Building2, X, AlertTriangle,
+  Loader2, Bell, ChevronRight, Building2, X, AlertTriangle, Activity, Layers,
 } from "lucide-react";
 import { sb, rpc } from "@/lib/supabase";
 import { cn, PAPEIS_EMPRESA } from "@/lib/utils";
@@ -15,7 +15,7 @@ export type Config = {
   empresa_id: string; logo_path: string | null; energia_kwh: number; mao_obra_hora: number; margem_pct: number; impostos_pct: number;
   taxas_pct: number; desperdicio_pct: number; custos_fixos_mensais: number; embalagem_padrao: number; desconto_livre_pct: number;
   moeda: string; fuso: string; prefixo_pedido: string; prefixo_orcamento: string; prazo_padrao_dias: number; validade_orcamento_dias: number;
-  msg_orcamento: string; msg_pedido: string; onboarding_etapa: number; onboarding_concluido: boolean; horas_produtivas_mes?: number;
+  msg_orcamento: string; msg_pedido: string; onboarding_etapa: number; onboarding_concluido: boolean; horas_produtivas_mes?: number; falha_metodo?: "nenhum" | "percentual" | "sucesso"; falha_pct?: number; taxa_sucesso_pct?: number;
 };
 type Empresa = { id: string; nome: string; papel: string; status: string };
 type Ctx = {
@@ -33,8 +33,10 @@ const MENU: Item[] = [
   { href: "/pedidos/", label: "Pedidos e Vendas", icon: ShoppingCart, perm: ["pedidos_ver"], pronto: true },
   { href: "/producao/", label: "Ordens de Produção", icon: Factory, perm: ["producao_gerenciar", "pedidos_ver"], pronto: true },
   { href: "/impressoras/", label: "Impressoras 3D", icon: Printer, perm: ["impressoras_ver"], pronto: true },
+  { href: "/impressoras/monitoramento/", label: "Monitoramento", icon: Activity, perm: ["impressoras_ver", "producao_gerenciar"], pronto: true },
   { href: "/materia-prima/", label: "Matéria-prima", icon: Boxes, perm: ["materia_ver"], pronto: true },
   { href: "/produtos/", label: "Produtos", icon: Package, perm: ["produtos_ver"], pronto: true },
+  { href: "/projetos/", label: "Projetos 3D", icon: Layers, perm: ["produtos_ver", "orcamentos_criar", "producao_gerenciar"], pronto: true },
   { href: "/compras/", label: "Compras e Fornecedores", icon: Truck, perm: ["compras_gerenciar", "financeiro_ver"], pronto: true },
   { href: "/financeiro/", label: "Financeiro", icon: Wallet, perm: ["financeiro_ver"], pronto: true },
   { href: "/manutencao/", label: "Manutenção", icon: Wrench, perm: ["impressoras_ver"], pronto: true },
@@ -42,7 +44,7 @@ const MENU: Item[] = [
   { href: "/relatorios/", label: "Relatórios", icon: BarChart3, perm: ["relatorios_ver", "financeiro_ver", "compras_gerenciar"], pronto: true },
   { href: "/portal/", label: "Portal do Comprador", icon: Store, perm: ["orcamentos_ver", "orcamentos_criar", "config_editar"], pronto: true },
   { href: "/equipe/", label: "Equipe e Permissões", icon: UserCog, pronto: true },
-  { href: "#integracoes", label: "Integrações", icon: Plug, pronto: false },
+  { href: "/integracoes/", label: "Integrações", icon: Plug, pronto: true },
   { href: "/configuracoes/", label: "Configurações", icon: Settings, perm: ["config_editar"], pronto: true },
   { href: "/assinatura/", label: "Minha Assinatura", icon: CreditCard, pronto: true },
 ];
@@ -166,7 +168,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const itens = MENU.filter((m) => !m.perm || m.perm.some((p) => ctx.pode(p)));
   const naoLidas = notifs.filter((n) => !lidas.includes(n.id));
-  const atual = MENU.find((m) => m.pronto && path.startsWith(m.href.replace(/\/$/, "")));
+  // o item mais específico vence (ex.: /impressoras/monitoramento/ antes de /impressoras/)
+  const atual = MENU.filter((m) => m.pronto && path.startsWith(m.href.replace(/\/$/, ""))).sort((a, b) => b.href.length - a.href.length)[0];
 
   const Nav = ({ compacto }: { compacto: boolean }) => (
     <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">

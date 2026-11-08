@@ -24,7 +24,7 @@ export default function OrcamentoPublico() {
   const [resposta, setResposta] = useState<string | null>(null);
 
   const carregar = (t: string) => rpc<Publico>("orcamento_publico", { p_token: t }).then(setD).catch((e) => setFalha(erroMsg(e)));
-  useEffect(() => { const t = new URLSearchParams(location.search).get("t"); setToken(t); if (t) carregar(t); else setFalha("Link incompleto"); }, []);
+  useEffect(() => { const t = new URLSearchParams(location.search).get("t"); setToken(t); if (t) { carregar(t); rpc("orcamento_visualizado", { p_token: t }).catch(() => undefined); } else setFalha("Link incompleto"); }, []);
 
   const responder = async (e: React.FormEvent) => {
     e.preventDefault(); if (!token || !modo) return; setEnviando(true);

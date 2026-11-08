@@ -108,19 +108,26 @@ function Editor() {
     const impostos = numOuNull(it.impostos_pct) ?? app.config.impostos_pct;
     const taxas = numOuNull(it.taxas_pct) ?? app.config.taxas_pct;
     const desp = numOuNull(it.desperdicio_pct) ?? app.config.desperdicio_pct;
-    const material = (n("peso_g") / 1000) * precoKg * (1 + desp / 100);
+    // outros filamentos do item (peças multicoloridas importadas do Bambu Studio): preço/kg congelado no item
+    const extras = ((it._id && (salvos[it._id] as unknown as { filamentos_extras?: { peso_g: number; preco_kg: number }[] })?.filamentos_extras) || [])
+      .reduce((t, e) => t + (Number(e.peso_g) / 1000) * Number(e.preco_kg || 0), 0);
+    const material = ((n("peso_g") / 1000) * precoKg + extras) * (1 + desp / 100);
     const energia = ((imp?.potencia_w || 0) / 1000) * n("tempo_h") * app.config.energia_kwh;
     const maquina = n("tempo_h") * (imp?.custo_hora || 0);
     const maoObra = n("mao_obra_h") * app.config.mao_obra_hora;
-    const custo = material + energia + maquina + maoObra + n("suportes_custo") + n("acabamento_custo") + n("pintura_custo") + n("embalagem_custo") + n("frete_assumido") + n("outros_custos");
+    const direto = material + energia + maquina + maoObra + n("suportes_custo") + n("acabamento_custo") + n("pintura_custo") + n("embalagem_custo") + n("outros_custos");
+    const cf = app.config;
+    const falha = cf.falha_metodo === "percentual" ? direto * (cf.falha_pct || 0) / 100 : cf.falha_metodo === "sucesso" ? (material + energia + maquina) * (100 / Math.max(cf.taxa_sucesso_pct || 100, 1) - 1) : 0;
+    const custo = direto + falha + n("frete_assumido");
+    const fixo = (cf.horas_produtivas_mes || 0) > 0 ? n("tempo_h") * cf.custos_fixos_mensais / (cf.horas_produtivas_mes || 1) : 0;
     const den = 1 - (margem + impostos + taxas) / 100;
-    const preco = numOuNull(it.preco_manual) ?? (den > 0 ? Math.round(((custo - n("desconto_terceiros")) / den) * 100) / 100 : NaN);
+    const preco = numOuNull(it.preco_manual) ?? (den > 0 ? Math.round(((custo + fixo - n("desconto_terceiros")) / den) * 100) / 100 : NaN);
     const qtd = n("quantidade") || 0;
     const total = Math.round(preco * qtd * 100) / 100;
     const custoTotal = (custo - n("desconto_terceiros")) * qtd;
     const lucro = total - custoTotal - total * (impostos + taxas) / 100;
     return { material, energia, maquina, maoObra, custo, preco, total, custoTotal, lucro, margem, impostos, taxas, desp, precoKg, den, imp, m };
-  }, [base, cab.cliente_id, app.config]);
+  }, [base, cab.cliente_id, app.config, salvos]);
 
   const resumo = useMemo(() => {
     const cs = itens.map((it) => (congelado && it._id && salvos[it._id] ? {
@@ -201,6 +208,7 @@ function Editor() {
         </>} />
 
       {congelado && <div className="mb-4"><Aviso tom={status === "cancelado" ? "amarelo" : "verde"}>Orçamento {STATUS_ORCAMENTO[status].toLowerCase()}: os valores foram preservados como estavam no momento da aprovação. Para mudar, use <b>Duplicar</b>.</Aviso></div>}
+      {status === "enviado" && orc?.visualizado_em ? <div className="mb-4"><Aviso>O cliente abriu o link em {new Date(orc.visualizado_em as string).toLocaleString("pt-BR")}.</Aviso></div> : null}
       {expirado && <div className="mb-4"><Aviso tom="amarelo">A validade venceu em {data(orc?.validade as string)}. O cliente não consegue mais aprovar pelo link — ajuste a validade e reenvie.</Aviso></div>}
 
       {id && app.pode("orcamentos_criar") && app.podeEscrever && (
@@ -276,8 +284,8 @@ function Editor() {
           <Button variant="secondary" onClick={() => { navigator.clipboard.writeText(link); toast("Link copiado"); }}><Copy className="h-4 w-4" /></Button></div>
         <div className="mt-4 flex flex-wrap gap-2">
           {linkWhats(cliente?.whatsapp || cliente?.telefone, msgWhats)
-            ? <a href={linkWhats(cliente?.whatsapp || cliente?.telefone, msgWhats)!} target="_blank" rel="noreferrer"><Button><MessageCircle className="h-4 w-4" /> Enviar no WhatsApp</Button></a>
-            : <a href={`https://wa.me/?text=${encodeURIComponent(msgWhats)}`} target="_blank" rel="noreferrer"><Button><MessageCircle className="h-4 w-4" /> Escolher contato no WhatsApp</Button></a>}
+            ? <a href={linkWhats(cliente?.whatsapp || cliente?.telefone, msgWhats)!} target="_blank" rel="noreferrer" onClick={() => rpc("registrar_compartilhamento", { p_orcamento: id, p_canal: "whatsapp" }).catch(() => undefined)}><Button><MessageCircle className="h-4 w-4" /> Enviar no WhatsApp</Button></a>
+            : <a href={`https://wa.me/?text=${encodeURIComponent(msgWhats)}`} target="_blank" rel="noreferrer" onClick={() => rpc("registrar_compartilhamento", { p_orcamento: id, p_canal: "whatsapp" }).catch(() => undefined)}><Button><MessageCircle className="h-4 w-4" /> Escolher contato no WhatsApp</Button></a>}
           <Link href={`/orcamentos/imprimir/?id=${id}`} target="_blank"><Button variant="secondary"><Printer className="h-4 w-4" /> Gerar PDF</Button></Link>
         </div>
       </Modal>

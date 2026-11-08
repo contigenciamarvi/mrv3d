@@ -6,7 +6,8 @@ export type Projeto = { id: string; nome: string; origem: string; arquivo_path: 
   miniatura_path: string | null; pecas: number | null; placas: number | null; tempo_estimado_min: number | null; peso_g: number | null; materiais: string[]; cores: string[];
   impressora_modelo: string | null; bico_mm: number | null; altura_camada_mm: number | null; preenchimento: string | null; fatiador: string | null; volume_cm3: number | null;
   dimensoes_mm: number[] | null; metadados: Record<string, unknown>; makerworld_url: string | null; autor: string | null; licenca: string | null; uso_comercial: string; descricao: string | null;
-  tags: string[]; produto_id: string | null; arquivado: boolean; created_at: string; updated_at: string; produtos?: { nome: string } | null };
+  tags: string[]; produto_id: string | null; arquivado: boolean; created_at: string; updated_at: string; produtos?: { nome: string } | null;
+  versao: number; projeto_raiz_id: string | null; copia_de: string | null };
 
 export const LICENCAS: Record<string, string> = {
   propria: "Projeto próprio", cc0: "CC0 (domínio público)", cc_by: "CC BY", cc_by_sa: "CC BY-SA", cc_by_nd: "CC BY-ND", cc_by_nc: "CC BY-NC (sem uso comercial)",

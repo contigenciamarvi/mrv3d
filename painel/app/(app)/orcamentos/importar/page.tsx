@@ -10,9 +10,10 @@ import { toast, erro } from "@/lib/toast";
 import { brl, num, numOuNull, erroMsg, cn } from "@/lib/utils";
 import { importarArquivo, sugerirMaterial, precoKg, type Importado, type MatCadastro } from "@/lib/importar3d";
 import { salvarNaBiblioteca, type Projeto } from "@/lib/biblioteca";
+import { calcularItem, custoMaterial, depreciacaoHora, type Config as CfgCalc } from "@/lib/precificacao";
 import { Button, Card, CardTitle, Field, Input, Select, Grid, Modal, Table, Td, Loading, ErrorBox, Badge, Aviso, Checkbox } from "@/components/ui";
 
-type Imp = { id: string; nome: string; potencia_w: number; custo_hora: number; custo_aquisicao: number; vida_util_horas: number; custo_manutencao_hora: number; bambu_modelo: string | null; modelo: string | null; status: string };
+type Imp = { id: string; nome: string; potencia_w: number; custo_hora: number; custo_aquisicao: number; vida_util_horas: number; custo_manutencao_hora: number; valor_residual: number; custo_operacional_hora: number; modelo: string | null; fabricante: string | null; status: string };
 type Cli = { id: string; nome: string; margem_pct: number | null };
 type Mat = MatCadastro & { margem_pct: number | null };
 type FilSlot = { slot: number; tipo: string | null; cor: string | null; perfil: string | null; material_id: string };
@@ -42,7 +43,7 @@ function Conteudo() {
 
   const { dados, recarregar } = useDados(async () => {
     const [imps, clis, mats] = await Promise.all([
-      q<Imp[]>(sb().from("impressoras").select("id,nome,potencia_w,custo_hora,custo_aquisicao,vida_util_horas,custo_manutencao_hora,bambu_modelo,modelo,status").eq("empresa_id", app.empresa.id).neq("status", "inativa").order("nome")),
+      q<Imp[]>(sb().from("impressoras").select("id,nome,potencia_w,custo_hora,custo_aquisicao,vida_util_horas,custo_manutencao_hora,valor_residual,custo_operacional_hora,modelo,fabricante,status").eq("empresa_id", app.empresa.id).neq("status", "inativa").order("nome")),
       app.pode("clientes_ver") ? q<Cli[]>(sb().from("clientes").select("id,nome,margem_pct").eq("empresa_id", app.empresa.id).eq("arquivado", false).order("nome")) : Promise.resolve([] as Cli[]),
       q<Mat[]>(sb().from("materiais").select("id,nome,cor,material,categoria,unidade,custo_medio,peso_liquido_g,quantidade,quantidade_reservada,margem_pct").eq("empresa_id", app.empresa.id).eq("ativo", true)
         .in("categoria", ["filamento", "resina"]).order("nome")),
@@ -63,7 +64,7 @@ function Conteudo() {
     // impressora cadastrada com o mesmo modelo
     const imps = dados?.imps || [];
     const alvo = (ex.impressora || "").toLowerCase().replace(/bambu lab\s*/, "");
-    setImpressora((alvo && imps.find((i) => `${i.bambu_modelo || ""} ${i.modelo || ""} ${i.nome}`.toLowerCase().includes(alvo))?.id) || imps[0]?.id || "");
+    setImpressora((alvo && imps.find((i) => `${i.fabricante || ""} ${i.modelo || ""} ${i.nome}`.toLowerCase().includes(alvo))?.id) || imps[0]?.id || "");
   };
 
   const processar = async (arq: File | undefined) => {
@@ -101,12 +102,16 @@ function Conteudo() {
   const cfg = app.config;
   const margemPadrao = cli?.margem_pct ?? matDe(slots[0]?.slot)?.margem_pct ?? cfg.margem_pct;
   const margemUsada = margem ?? margemPadrao;
-  const den = 1 - (margemUsada + cfg.impostos_pct + cfg.taxas_pct) / 100;
 
-  // cálculo (mesmas fórmulas do servidor; o valor oficial é recalculado ao salvar)
+  // cálculo: o mesmo motor do servidor (lib/precificacao); o valor oficial é recalculado ao salvar
+  const cfgCalc: CfgCalc = { energia_kwh: cfg.energia_kwh, mao_obra_hora: cfg.mao_obra_hora, margem_pct: margemPadrao, impostos_pct: cfg.impostos_pct, taxas_pct: cfg.taxas_pct,
+    desperdicio_pct: desp, custos_fixos_mensais: cfg.custos_fixos_mensais, horas_produtivas_mes: cfg.horas_produtivas_mes || 0, falha_metodo: cfg.falha_metodo || "nenhum",
+    falha_pct: cfg.falha_pct || 0, taxa_sucesso_pct: cfg.taxa_sucesso_pct || 100 };
   const calc = useMemo(() => {
-    const fixoH = (cfg.horas_produtivas_mes || 0) > 0 ? cfg.custos_fixos_mensais / (cfg.horas_produtivas_mes || 1) : 0;
     const mo = numOuNull(extras.mao_obra_h) || 0, acab = numOuNull(extras.acabamento) || 0, emb = numOuNull(extras.embalagem) || 0;
+    const maq = imp ? { potencia_w: imp.potencia_w, custo_aquisicao: imp.custo_aquisicao, valor_residual: imp.valor_residual || 0, vida_util_horas: imp.vida_util_horas,
+      custo_manutencao_hora: imp.custo_manutencao_hora, custo_operacional_hora: imp.custo_operacional_hora || 0 } : null;
+    let erroCalc = "";
     const itens = placas.filter((p) => p.incluir).map((p) => {
       const nObj = Math.max(p.objetos.length, 1);
       const div = modo === "peca" ? nObj : 1;
@@ -114,33 +119,31 @@ function Conteudo() {
       const quantidade = modo === "peca" ? copias * nObj : copias;
       const tempoH = (numOuNull(p.tempo_min) || 0) / 60 / div;
       const fil = slots.map((s) => ({ slot: s.slot, material: dados?.mats.find((m) => m.id === s.material_id) || null, peso: (numOuNull(p.pesos[s.slot]) || 0) / div })).filter((f) => f.peso > 0);
-      const filamentos = fil.reduce((t, f) => t + (f.peso / 1000) * precoKg(f.material), 0);
-      const perdas = filamentos * desp / 100;
-      const energia = ((imp?.potencia_w || 0) / 1000) * tempoH * cfg.energia_kwh;
-      const deprec = imp ? (imp.custo_aquisicao / imp.vida_util_horas) * tempoH : 0;
-      const manut = (imp?.custo_manutencao_hora || 0) * tempoH;
-      const maoObra = mo / div * cfg.mao_obra_hora;
-      const custoUnit = filamentos + perdas + energia + deprec + manut + maoObra + acab + emb;
-      const fixo = tempoH * fixoH;
-      const precoUnit = den > 0 ? Math.round(((custoUnit + fixo) / den) * 100) / 100 : 0;
-      return { p, quantidade, tempoH, fil, porUnidade: { filamentos, perdas, energia, deprec, manut, maoObra, acab, emb, fixo }, custoUnit, precoUnit,
-        precoTotal: Math.round(precoUnit * quantidade * 100) / 100, custoTotal: custoUnit * quantidade, pesoUnit: fil.reduce((t, f) => t + f.peso, 0) };
+      let r: ReturnType<typeof calcularItem> | null = null;
+      try {
+        r = calcularItem({ filamentos: fil.map((f) => ({ gramas: f.peso, preco_kg: precoKg(f.material) })), tempo_h: tempoH, quantidade, mao_obra_h: mo / div, acabamento: acab, embalagem: emb,
+          margem_pct: margem, desperdicio_pct: desp }, { ...cfgCalc, margem_pct: margemPadrao }, maq);
+      } catch (e) { erroCalc = erroMsg(e); }
+      const bruto = fil.reduce((t, f) => t + custoMaterial(f.peso, precoKg(f.material)), 0);
+      const deprec = maq ? depreciacaoHora(maq) * tempoH : 0;
+      return { p, quantidade, tempoH, fil, r, partes: { filamentos: bruto, perdas: (r?.porUnidade.material || 0) - bruto, energia: r?.porUnidade.energia || 0, deprec,
+        manut: (r?.porUnidade.maquina || 0) - deprec, maoObra: r?.porUnidade.maoObra || 0, acab, emb, falha: r?.porUnidade.falha || 0, fixo: r?.porUnidade.fixo || 0 },
+        custoUnit: r?.porUnidade.custo || 0, precoUnit: r?.precoUnit || 0, precoTotal: r?.precoTotal || 0, custoTotal: r?.custoTotal || 0, pesoUnit: fil.reduce((t, f) => t + f.peso, 0) };
     });
-    const soma = (k: keyof (typeof itens)[number]["porUnidade"]) => itens.reduce((t, i) => t + i.porUnidade[k] * i.quantidade, 0);
-    const preco = itens.reduce((t, i) => t + i.precoTotal, 0);
-    const custo = itens.reduce((t, i) => t + i.custoTotal, 0);
-    const fixo = soma("fixo");
-    const impostos = preco * cfg.impostos_pct / 100, taxas = preco * cfg.taxas_pct / 100;
-    // consumo por material (estoque)
+    const soma = (k: keyof (typeof itens)[number]["partes"]) => itens.reduce((t, i) => t + i.partes[k] * i.quantidade, 0);
+    const preco = itens.reduce((t, i) => t + i.precoTotal, 0), custo = itens.reduce((t, i) => t + i.custoTotal, 0);
+    const impostos = itens.reduce((t, i) => t + (i.r?.impostos || 0), 0), taxas = itens.reduce((t, i) => t + (i.r?.taxas || 0), 0), fixo = soma("fixo");
     const porMat = new Map<string, { m: Mat | null; nome: string; g: number; custo: number }>();
     for (const i of itens) for (const f of i.fil) {
       const k = f.material?.id || `slot-${f.slot}`;
       const a = porMat.get(k) || { m: f.material as Mat | null, nome: f.material ? `${f.material.nome}${f.material.cor ? ` · ${f.material.cor}` : ""}` : `Filamento ${f.slot} (sem cadastro)`, g: 0, custo: 0 };
-      a.g += f.peso * i.quantidade; a.custo += (f.peso / 1000) * precoKg(f.material) * i.quantidade * (1 + desp / 100); porMat.set(k, a);
+      a.g += f.peso * i.quantidade; a.custo += custoMaterial(f.peso, precoKg(f.material)) * i.quantidade * (1 + desp / 100); porMat.set(k, a);
     }
-    return { itens, preco, custo, fixo, impostos, taxas, lucroBruto: preco - custo - impostos - taxas, lucro: preco - custo - fixo - impostos - taxas, porMat: Array.from(porMat.values()),
-      partes: { filamentos: soma("filamentos"), perdas: soma("perdas"), energia: soma("energia"), deprec: soma("deprec"), manut: soma("manut"), maoObra: soma("maoObra"), acab: soma("acab"), emb: soma("emb") } };
-  }, [placas, slots, modo, imp, desp, extras, den, dados, cfg]);
+    return { itens, preco, custo, fixo, impostos, taxas, lucroBruto: preco - custo - impostos - taxas, lucro: preco - custo - fixo - impostos - taxas, porMat: Array.from(porMat.values()), erroCalc,
+      precoMinimo: itens.reduce((t, i) => t + (i.r?.precoMinimo || 0) * i.quantidade, 0),
+      partes: { filamentos: soma("filamentos"), perdas: soma("perdas"), energia: soma("energia"), deprec: soma("deprec"), manut: soma("manut"), maoObra: soma("maoObra"), acab: soma("acab"), emb: soma("emb"), falha: soma("falha") } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placas, slots, modo, imp, desp, extras, margem, margemPadrao, dados, cfg]);
 
   const semMaterial = slots.some((s) => !s.material_id && placas.some((p) => p.incluir && (numOuNull(p.pesos[s.slot]) || 0) > 0));
   const semDados = calc.itens.some((i) => i.tempoH === 0 || i.pesoUnit === 0);
@@ -290,19 +293,22 @@ function Conteudo() {
           <Card className="lg:sticky lg:top-4 lg:self-start"><CardTitle>Resumo (estimado)</CardTitle>
             <dl className="space-y-1.5 text-sm">
               {([["Filamentos e resinas", calc.partes.filamentos], [`Desperdício previsto (${num(desp, 1)}%)`, calc.partes.perdas], ["Energia", calc.partes.energia], ["Depreciação da impressora", calc.partes.deprec],
-                ["Manutenção proporcional", calc.partes.manut], ["Mão de obra", calc.partes.maoObra], ["Acabamento", calc.partes.acab], ["Embalagem", calc.partes.emb]] as [string, number][]).map(([l, v]) =>
+                ["Manutenção e custo operacional", calc.partes.manut], ["Mão de obra", calc.partes.maoObra], ["Acabamento", calc.partes.acab], ["Embalagem", calc.partes.emb],
+                ...(calc.partes.falha > 0 ? [["Reserva para falhas", calc.partes.falha]] : [])] as [string, number][]).map(([l, v]) =>
                 <div key={l} className="flex justify-between"><dt className="text-slate-500">{l}</dt><dd className="tnum">{brl(v)}</dd></div>)}
               <div className="flex justify-between border-t border-slate-200 pt-1.5 font-medium dark:border-slate-800"><dt>Custo de produção</dt><dd className="tnum">{brl(calc.custo)}</dd></div>
               {calc.fixo > 0 && <div className="flex justify-between"><dt className="text-slate-500">Custos fixos alocados</dt><dd className="tnum">{brl(calc.fixo)}</dd></div>}
               <div className="flex justify-between"><dt className="text-slate-500">Taxas de venda</dt><dd className="tnum">{brl(calc.taxas)}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Impostos</dt><dd className="tnum">{brl(calc.impostos)}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">Preço mínimo (margem zero)</dt><dd className="tnum">{brl(calc.precoMinimo)}</dd></div>
               <div className="flex justify-between border-t border-slate-200 pt-1.5 text-base font-semibold dark:border-slate-800"><dt>Preço sugerido</dt><dd className="tnum">{brl(calc.preco)}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Lucro bruto</dt><dd className="tnum">{brl(calc.lucroBruto)}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Lucro após custos fixos</dt><dd className={cn("tnum font-medium", calc.lucro < 0 ? "text-red-600" : "text-emerald-600")}>{brl(calc.lucro)}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Margem estimada</dt><dd className="tnum">{calc.preco > 0 ? `${num((calc.lucro / calc.preco) * 100, 1)}%` : "—"}</dd></div>
             </dl>
             {semDados && <div className="mt-3"><Aviso tom="amarelo">Há placa sem tempo ou sem peso: o custo fica incompleto.</Aviso></div>}
-            <Button className="mt-4 w-full" loading={salvando} disabled={!calc.itens.length || semMaterial} onClick={salvar}><Save className="h-4 w-4" /> Salvar orçamento</Button>
+            {calc.erroCalc && <div className="mt-3"><Aviso tom="vermelho">{calc.erroCalc}</Aviso></div>}
+            <Button className="mt-4 w-full" loading={salvando} disabled={!calc.itens.length || semMaterial || !!calc.erroCalc} onClick={salvar}><Save className="h-4 w-4" /> Salvar orçamento</Button>
             <p className="mt-2 text-xs text-slate-500">Salva o projeto na biblioteca e abre o orçamento, onde você gera o PDF, envia o link ao comprador e converte em pedido quando for aprovado. Os valores ficam congelados no orçamento; o custo real aparece depois, nas ordens de produção.</p>
           </Card>
         </div>

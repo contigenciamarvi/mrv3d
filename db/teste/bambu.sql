@@ -83,28 +83,6 @@ insert into bb values ('omd', public.duplicar_orcamento((select v from bb where 
 select pg_temp.ok((select jsonb_array_length(filamentos_extras) = 1 and projeto_id is not null from public.orcamento_itens where orcamento_id = (select v from bb where k = 'omd')), 'BB duplicar mantém filamentos e projeto');
 reset role; update public.empresa_config set horas_produtivas_mes = 0 where empresa_id = (select v from bb where k = 'ea');
 
--- ===================== AGENTE LOCAL =====================
-set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
-select pg_temp.falha($$select public.criar_agente((select v from bb where k = 'ea'), 'PC da oficina')$$, 'BB comercial não cria agente', 'administração');
-set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
-insert into bt values ('tok', public.criar_agente((select v from bb where k = 'ea'), 'PC da oficina'));
-select pg_temp.ok((select t ~ '^mrv3d_ag_[0-9a-f]{64}$' from bt where k = 'tok'), 'BB token do agente gerado');
-select pg_temp.falha($$select token_hash from public.agentes_locais$$, 'BB hash do token não é lido pela tela');
-update public.impressoras set bambu_serial = '01P00A123456789' where id = (select v from bb where k = 'imp');
-select pg_temp.falha($$insert into public.impressora_telemetria(impressora_id, empresa_id, dados, fonte) values ((select v from bb where k = 'imp'), (select v from bb where k = 'ea'), '{"progresso": 99}', 'agente_lan')$$, 'BB telemetria não é forjada pela tela');
-set role anon; reset request.jwt.claim.sub;
-select pg_temp.falha($$select public.agente_reportar('mrv3d_ag_' || repeat('0', 64), '{"impressoras": []}')$$, 'BB token falso recusado', 'inválido');
-select pg_temp.ok((select (public.agente_reportar((select t from bt where k = 'tok'), jsonb_build_object('versao', '1.0', 'impressoras', jsonb_build_array(
-  jsonb_build_object('serial', '01p00a123456789', 'estado', 'RUNNING', 'progresso', 42, 'temp_bico', 220.5, 'restante_min', 35, 'hack', 'x', 'arquivo', '<script>'),
-  jsonb_build_object('serial', 'XYZ999888777', 'nome', 'A1 nova', 'modelo', 'A1')))))->>'atualizadas' = '1'), 'BB agente atualiza a impressora vinculada');
-reset role;
-select pg_temp.ok((select dados->>'progresso' = '42' and not (dados ? 'hack') and fonte = 'agente_lan' from public.impressora_telemetria where impressora_id = (select v from bb where k = 'imp')), 'BB telemetria só com campos conhecidos');
-select pg_temp.ok((select count(*) = 0 from public.auditoria where entidade = 'impressoras' and detalhes::text like '%progresso%'), 'BB telemetria não enche a auditoria');
-select pg_temp.ok((select impressoras_detectadas->0->>'serial' = 'XYZ999888777' from public.agentes_locais where nome = 'PC da oficina'), 'BB impressora não vinculada aparece como detectada');
-select pg_temp.ok((select status = 'conectada' and modo = 'agente_lan' from public.integracoes where empresa_id = (select v from bb where k = 'ea')), 'BB integração conectada pelo agente');
-set role anon;
-select pg_temp.ok((select (public.agente_reportar((select t from bt where k = 'tok'), '{"impressoras": []}'))->>'ignorado' = 'true'), 'BB envios em sequência são limitados');
-select pg_temp.falha($$select public.agente_reportar((select t from bt where k = 'tok'), jsonb_build_object('impressoras', (select jsonb_agg(jsonb_build_object('serial', 'AAAAAA' || g)) from generate_series(1, 51) g)))$$, 'BB limite de 50 impressoras por envio');
 -- desconectar apaga credenciais e revoga
 reset role;
 select private.salvar_credencial((select v from bb where k = 'ea'), 'bambu_lab', 'token-secreto', null, null);
@@ -114,11 +92,7 @@ select pg_temp.falha($$select * from private.integracao_credenciais$$, 'BB crede
 select pg_temp.falha($$select private.ler_credencial((select v from bb where k = 'ea'), 'bambu_lab')$$, 'BB tela não decifra credenciais');
 select public.desconectar_integracao((select v from bb where k = 'ea'), 'bambu_lab');
 reset role;
-select pg_temp.ok((select count(*) = 0 from private.integracao_credenciais) and (select bool_and(not ativo) from public.agentes_locais)
-  and (select count(*) = 0 from public.impressora_telemetria), 'BB desconectar apaga credenciais, revoga agentes e limpa telemetria');
-set role anon;
-select pg_temp.falha($$select public.agente_reportar((select t from bt where k = 'tok'), '{"impressoras": []}')$$, 'BB agente revogado não envia', 'revogado');
-reset role;
+select pg_temp.ok((select count(*) = 0 from private.integracao_credenciais), 'BB desconectar apaga as credenciais');
 -- ===================== COMPLEMENTOS DO MVP =====================
 set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 update public.impressoras set custo_aquisicao = 6000, valor_residual = 1000, vida_util_horas = 5000, custo_manutencao_hora = 0.1, custo_operacional_hora = 0.2 where id = (select v from bb where k = 'imp');

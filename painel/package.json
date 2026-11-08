@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:3d": "node --experimental-strip-types --no-warnings --test testes/projeto3d.test.ts"
+    "test:3d": "node --experimental-strip-types --no-warnings --test testes/projeto3d.test.ts testes/precificacao.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",

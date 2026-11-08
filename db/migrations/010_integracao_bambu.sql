@@ -1,7 +1,7 @@
 -- =====================================================================
 -- MÓDULO — Integração Bambu Lab e biblioteca de projetos 3D
--- Biblioteca com upload manual (funcional), referências do MakerWorld com licença,
--- agente local opcional (LAN, somente leitura) e base para sincronização oficial futura.
+-- Biblioteca com upload manual (funcional), referências do MakerWorld com licença
+-- e base para sincronização oficial futura (o agente local fica na 011).
 -- Nenhuma senha da conta Bambu Lab é pedida ou guardada.
 -- =====================================================================
 create extension if not exists pgcrypto with schema extensions;
@@ -298,146 +298,6 @@ begin
   return v_op;
 end; $$;
 
--- ---------- Impressoras: identificação Bambu e telemetria ---------------
-alter table public.impressoras
-  add column if not exists bambu_serial text check (bambu_serial is null or bambu_serial ~ '^[A-Za-z0-9]{6,32}$'),
-  add column if not exists bambu_modelo text check (length(bambu_modelo) <= 60);
-create unique index if not exists impressoras_serial_uq on public.impressoras(empresa_id, upper(bambu_serial)) where bambu_serial is not null;
--- telemetria em tabela própria (não mexe na impressora, não enche a auditoria); só a integração escreve
-create table if not exists public.impressora_telemetria (
-  impressora_id uuid primary key references public.impressoras(id) on delete cascade,
-  empresa_id uuid not null references public.empresas(id) on delete cascade,
-  dados jsonb not null,
-  fonte text not null check (fonte in ('agente_lan','nuvem')),
-  atualizado_em timestamptz not null default now()
-);
-alter table public.impressora_telemetria enable row level security;
-create policy telemetria_ler on public.impressora_telemetria for select using (private.tem_permissao(empresa_id, 'impressoras_ver'));
--- trocar o número de série descarta a telemetria antiga
-create or replace function private.serial_mudou() returns trigger
-language plpgsql security definer set search_path = '' as $$
-begin
-  if new.bambu_serial is distinct from old.bambu_serial then delete from public.impressora_telemetria where impressora_id = new.id; end if;
-  return null;
-end; $$;
-drop trigger if exists trg_impressoras_serial on public.impressoras;
-create trigger trg_impressoras_serial after update of bambu_serial on public.impressoras for each row execute function private.serial_mudou();
-
--- ---------- Agente local opcional (rede da loja, somente leitura) ------
-create table if not exists public.agentes_locais (
-  id uuid primary key default gen_random_uuid(),
-  empresa_id uuid not null references public.empresas(id) on delete cascade,
-  nome text not null check (length(trim(nome)) between 1 and 80),
-  token_hash text not null unique,
-  token_prefixo text not null,
-  ativo boolean not null default true,
-  versao text check (length(versao) <= 30),
-  ultimo_contato timestamptz,
-  impressoras_detectadas jsonb not null default '[]',
-  created_by uuid references auth.users(id) on delete set null default auth.uid(),
-  created_at timestamptz not null default now(),
-  revogado_em timestamptz
-);
-alter table public.agentes_locais enable row level security;
-create policy agentes_ler on public.agentes_locais for select using (private.tem_permissao(empresa_id, 'integracoes_config') or private.tem_acesso_suporte(empresa_id));
--- token_hash não é segredo útil (sha-256), mas também não precisa ir para a tela
-revoke all on public.agentes_locais from authenticated, anon;
-grant select (id, empresa_id, nome, token_prefixo, ativo, versao, ultimo_contato, impressoras_detectadas, created_by, created_at, revogado_em) on public.agentes_locais to authenticated;
-
-create or replace function public.criar_agente(p_empresa uuid, p_nome text)
-returns text language plpgsql security definer set search_path = '' as $$
-declare v_token text := 'mrv3d_ag_' || encode(extensions.gen_random_bytes(32), 'hex');
-begin
-  if not private.pode(p_empresa, 'integracoes_config') then raise exception 'Só a administração configura integrações'; end if;
-  if (select count(*) from public.agentes_locais where empresa_id = p_empresa and ativo) >= 5 then raise exception 'Limite de 5 agentes ativos: revogue um antes'; end if;
-  insert into public.agentes_locais(empresa_id, nome, token_hash, token_prefixo)
-  values (p_empresa, left(trim(p_nome), 80), encode(extensions.digest(v_token, 'sha256'), 'hex'), left(v_token, 14));
-  insert into public.integracoes(empresa_id, provedor, modo, status) values (p_empresa, 'bambu_lab', 'agente_lan', 'nao_configurada')
-  on conflict (empresa_id, provedor) do update set modo = case when public.integracoes.modo = 'nuvem' then 'nuvem' else 'agente_lan' end, updated_at = now();
-  perform private.registrar_evento(p_empresa, 'conexao', 'Agente local criado: ' || trim(p_nome), null);
-  return v_token; -- mostrado uma única vez
-end; $$;
-
-create or replace function public.revogar_agente(p_id uuid)
-returns void language plpgsql security definer set search_path = '' as $$
-declare a public.agentes_locais;
-begin
-  select * into a from public.agentes_locais where id = p_id for update;
-  if a.id is null or not private.pode(a.empresa_id, 'integracoes_config') then raise exception 'Agente não encontrado'; end if;
-  update public.agentes_locais set ativo = false, revogado_em = now() where id = a.id;
-  perform private.registrar_evento(a.empresa_id, 'desconexao', 'Agente local revogado: ' || a.nome, null);
-end; $$;
-
--- o agente envia o estado das impressoras (nunca recebe comandos)
-create or replace function public.agente_reportar(p_token text, p_dados jsonb)
-returns jsonb language plpgsql security definer set search_path = '' as $$
-declare a public.agentes_locais; i jsonb; v_serial text; v_tel jsonb; v_det jsonb := '[]'::jsonb; v_n int := 0; v_id uuid;
-  num_ok constant text := '^-?[0-9]{1,6}(\.[0-9]{1,3})?$';
-begin
-  if p_token is null or p_token !~ '^mrv3d_ag_[0-9a-f]{64}$' then raise exception 'Token inválido'; end if;
-  select * into a from public.agentes_locais where token_hash = encode(extensions.digest(p_token, 'sha256'), 'hex') for update;
-  if a.id is null or not a.ativo then raise exception 'Token inválido ou revogado'; end if;
-  if not exists (select 1 from public.empresas where id = a.empresa_id and status not in ('suspensa','cancelada')) then raise exception 'Empresa indisponível'; end if;
-  if jsonb_typeof(p_dados->'impressoras') is distinct from 'array' or jsonb_array_length(p_dados->'impressoras') > 50 or length(p_dados::text) > 200000 then raise exception 'Dados inválidos'; end if;
-  -- no máximo um envio a cada 5 segundos
-  if a.ultimo_contato > now() - interval '5 seconds' then return jsonb_build_object('ok', true, 'ignorado', true); end if;
-  if a.ultimo_contato is null or a.ultimo_contato < now() - interval '10 minutes' then
-    perform private.registrar_evento(a.empresa_id, 'agente', 'Agente ' || a.nome || ' conectado', jsonb_build_object('versao', left(p_dados->>'versao', 30)));
-  end if;
-  for i in select * from jsonb_array_elements(p_dados->'impressoras') loop
-    v_serial := upper(left(i->>'serial', 32));
-    if v_serial is null or v_serial !~ '^[A-Z0-9]{6,32}$' then continue; end if;
-    -- só campos conhecidos, com tipo conferido (nada do agente é executado ou exibido como HTML)
-    select coalesce(jsonb_object_agg(k, case when k in ('estado','arquivo','material','cor','erro','etapa') then to_jsonb(left(i->>k, 120)) else i->k end), '{}'::jsonb) into v_tel
-      from unnest(array['online','estado','etapa','progresso','camada','total_camadas','restante_min','temp_bico','temp_bico_alvo','temp_mesa','temp_mesa_alvo','temp_camara',
-                        'arquivo','material','cor','erro','ams']) k
-     where i ? k and (
-       (k in ('estado','arquivo','material','cor','erro','etapa') and jsonb_typeof(i->k) = 'string')
-       or (k = 'online' and jsonb_typeof(i->k) = 'boolean')
-       or (k = 'ams' and jsonb_typeof(i->k) = 'array' and jsonb_array_length(i->k) <= 16 and length((i->k)::text) <= 4000)
-       or (k not in ('estado','arquivo','material','cor','erro','etapa','online','ams') and jsonb_typeof(i->k) = 'number' and (i->>k) ~ num_ok));
-    select id into v_id from public.impressoras where empresa_id = a.empresa_id and upper(bambu_serial) = v_serial;
-    if v_id is not null then
-      insert into public.impressora_telemetria(impressora_id, empresa_id, dados, fonte, atualizado_em) values (v_id, a.empresa_id, v_tel, 'agente_lan', now())
-      on conflict (impressora_id) do update set dados = excluded.dados, fonte = excluded.fonte, atualizado_em = now();
-    end if;
-    if v_id is null then
-      v_det := v_det || jsonb_build_array(jsonb_build_object('serial', v_serial, 'nome', left(i->>'nome', 80), 'modelo', left(i->>'modelo', 60)));
-    else v_n := v_n + 1; end if;
-    v_id := null;
-  end loop;
-  update public.agentes_locais set ultimo_contato = now(), versao = left(p_dados->>'versao', 30), impressoras_detectadas = v_det where id = a.id;
-  update public.integracoes set status = 'conectada', ultima_sincronizacao = now(), ultimo_erro = null, updated_at = now()
-   where empresa_id = a.empresa_id and provedor = 'bambu_lab' and modo = 'agente_lan';
-  return jsonb_build_object('ok', true, 'atualizadas', v_n, 'nao_vinculadas', jsonb_array_length(v_det));
-end; $$;
-
--- desconectar: apaga credenciais, revoga agentes e limpa a telemetria
-create or replace function public.desconectar_integracao(p_empresa uuid, p_provedor text)
-returns void language plpgsql security definer set search_path = '' as $$
-begin
-  if not private.pode(p_empresa, 'integracoes_config') then raise exception 'Só a administração configura integrações'; end if;
-  if p_provedor <> 'bambu_lab' then raise exception 'Integração desconhecida'; end if;
-  delete from private.integracao_credenciais where empresa_id = p_empresa and provedor = p_provedor;
-  update public.agentes_locais set ativo = false, revogado_em = coalesce(revogado_em, now()) where empresa_id = p_empresa and ativo;
-  delete from public.impressora_telemetria where empresa_id = p_empresa;
-  insert into public.integracoes(empresa_id, provedor, status, modo) values (p_empresa, p_provedor, 'desconectada', 'manual')
-  on conflict (empresa_id, provedor) do update set status = 'desconectada', modo = 'manual', conta_rotulo = null, ultimo_erro = null, updated_at = now();
-  perform private.registrar_evento(p_empresa, 'desconexao', 'Integração desconectada e credenciais excluídas', null);
-end; $$;
-
-create or replace function public.salvar_config_integracao(p_empresa uuid, p_config jsonb)
-returns void language plpgsql security definer set search_path = '' as $$
-declare v jsonb;
-begin
-  if not private.pode(p_empresa, 'integracoes_config') then raise exception 'Só a administração configura integrações'; end if;
-  -- só opções conhecidas
-  select coalesce(jsonb_object_agg(k, p_config->k), '{}'::jsonb) into v from unnest(array['mostrar_telemetria','telemetria_validade_min','material_padrao_id','alertar_licenca']) k
-   where p_config ? k and jsonb_typeof(p_config->k) in ('boolean','number','string') and length(p_config->>k) <= 60;
-  insert into public.integracoes(empresa_id, provedor, config) values (p_empresa, 'bambu_lab', v)
-  on conflict (empresa_id, provedor) do update set config = v, updated_at = now();
-end; $$;
-
 -- ---------- Arquivos: pasta de projetos ---------------------------------
 create or replace function private.pode_enviar_arquivo(p_nome text) returns boolean
 language plpgsql stable security definer set search_path = '' as $$
@@ -453,13 +313,9 @@ begin
 end; $$;
 
 revoke all on function public.registrar_evento_importacao(uuid, text, text), public.projeto_vincular(uuid, text, uuid), public.projeto_criar_orcamento(uuid, uuid, numeric),
-  public.projeto_criar_ordem(uuid, numeric, uuid, uuid), public.criar_agente(uuid, text), public.revogar_agente(uuid), public.agente_reportar(text, jsonb),
-  public.desconectar_integracao(uuid, text), public.salvar_config_integracao(uuid, jsonb) from public, anon;
+  public.projeto_criar_ordem(uuid, numeric, uuid, uuid) from public, anon;
 grant execute on function public.registrar_evento_importacao(uuid, text, text), public.projeto_vincular(uuid, text, uuid), public.projeto_criar_orcamento(uuid, uuid, numeric),
-  public.projeto_criar_ordem(uuid, numeric, uuid, uuid), public.criar_agente(uuid, text), public.revogar_agente(uuid),
-  public.desconectar_integracao(uuid, text), public.salvar_config_integracao(uuid, jsonb) to authenticated;
--- o agente local usa a chave pública (anon) + o token próprio
-grant execute on function public.agente_reportar(text, jsonb) to anon, authenticated;
+  public.projeto_criar_ordem(uuid, numeric, uuid, uuid) to authenticated;
 
 -- =====================================================================
 -- Orçamento automático a partir do Bambu Studio
@@ -684,23 +540,6 @@ begin
   insert into public.orcamento_revisoes(empresa_id, orcamento_id, revisao, evento, dados) values (o.empresa_id, o.id, o.revisao, 'compartilhado_' || p_canal, jsonb_build_object('total', o.total));
 end; $$;
 
--- métricas agregadas para o Super Admin (sem dados de clientes, projetos ou finanças das empresas)
-create or replace function public.admin_uso_empresas()
-returns table(empresa_id uuid, nome text, status public.status_empresa, usuarios bigint, impressoras bigint, projetos bigint, orcamentos_30d bigint, armazenamento_mb numeric, erros_integracao_7d bigint)
-language plpgsql stable security definer set search_path = '' as $$
-begin
-  if not private.is_admin_plataforma() then raise exception 'Acesso restrito à plataforma'; end if;
-  return query
-  select e.id, e.nome, e.status,
-    (select count(*) from public.membros m where m.empresa_id = e.id and m.ativo),
-    (select count(*) from public.impressoras i where i.empresa_id = e.id and i.status <> 'inativa'),
-    (select count(*) from public.projetos_3d p where p.empresa_id = e.id),
-    (select count(*) from public.orcamentos o where o.empresa_id = e.id and o.created_at > now() - interval '30 days'),
-    round(coalesce((select sum((s.metadata->>'size')::numeric) from storage.objects s where s.bucket_id = 'empresa' and s.name like e.id::text || '/%'), 0) / 1048576, 1),
-    (select count(*) from public.integracao_eventos v where v.empresa_id = e.id and v.tipo = 'erro' and v.created_at > now() - interval '7 days')
-  from public.empresas e order by e.nome;
-end; $$;
-
-revoke all on function public.orcamento_visualizado(text), public.registrar_compartilhamento(uuid, text), public.admin_uso_empresas() from public, anon;
+revoke all on function public.orcamento_visualizado(text), public.registrar_compartilhamento(uuid, text) from public, anon;
 grant execute on function public.orcamento_visualizado(text) to anon, authenticated;
-grant execute on function public.registrar_compartilhamento(uuid, text), public.admin_uso_empresas() to authenticated;
+grant execute on function public.registrar_compartilhamento(uuid, text) to authenticated;

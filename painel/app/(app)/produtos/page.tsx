@@ -273,7 +273,7 @@ function Arquivos({ produtoId, pode }: { produtoId: string; pode: boolean }) {
       {!dados?.length ? <Empty texto="Nenhum arquivo" /> : (
         <Table head={["Arquivo", "Tipo", "Tamanho", "Enviado em", ""]}>
           {dados.map((a) => (
-            <tr key={a.id}><Td><button onClick={() => abrir(a)} className="flex items-center gap-1 text-brand-600 hover:underline"><Paperclip className="h-3.5 w-3.5" /> {a.nome}</button></Td>
+            <tr key={a.id}><Td><button onClick={() => abrir(a)} className="flex items-center gap-1 text-brand-700 hover:underline"><Paperclip className="h-3.5 w-3.5" /> {a.nome}</button></Td>
               <Td>{a.tipo === "foto" ? "Foto" : a.tipo === "modelo" ? "Modelo 3D" : "Documento"}</Td><Td className="tnum">{a.tamanho ? `${num(a.tamanho / 1048576, 2)} MB` : "—"}</Td><Td>{dataHora(a.created_at)}</Td>
               <Td><div className="flex justify-end gap-1"><button onClick={() => abrir(a)} className="rounded p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Baixar"><FileDown className="h-4 w-4" /></button>
                 {pode && <button onClick={() => remover(a)} className="rounded p-1.5 text-slate-400 hover:text-red-600" aria-label="Remover"><Trash2 className="h-4 w-4" /></button>}</div></Td></tr>

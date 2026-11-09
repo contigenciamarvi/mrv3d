@@ -296,7 +296,7 @@ function Conteudo() {
             <div className="mt-5">
               <div className="mb-1 flex items-center justify-between text-sm"><span className="font-medium">Margem de lucro desejada</span><span className="tnum font-semibold">{num(margemUsada, 1)}%{margem == null && <span className="ml-1 text-xs font-normal text-slate-500">(padrão)</span>}</span></div>
               <input type="range" min={0} max={Math.max(0, 95 - cfg.impostos_pct - cfg.taxas_pct)} step={0.5} value={margemUsada} onChange={(e) => setMargem(Number(e.target.value))} className="w-full accent-brand-600" aria-label="Margem" />
-              {margem != null && <button className="text-xs text-brand-600 underline" onClick={() => setMargem(null)}>Voltar para o padrão ({num(margemPadrao, 1)}%)</button>}
+              {margem != null && <button className="text-xs text-brand-700 underline" onClick={() => setMargem(null)}>Voltar para o padrão ({num(margemPadrao, 1)}%)</button>}
               {abaixo && <Aviso tom="amarelo">Margem abaixo do padrão precisa de quem pode aprovar descontos: o orçamento não será salvo assim.</Aviso>}
             </div>
             <p className="mt-4 text-xs text-slate-500">Impostos {num(cfg.impostos_pct, 2)}% e taxas de venda {num(cfg.taxas_pct, 2)}% vêm de Configurações.{(cfg.horas_produtivas_mes || 0) > 0 ? ` Custos fixos: ${brl(cfg.custos_fixos_mensais)}/mês em ${num(cfg.horas_produtivas_mes || 0, 0)} h produtivas.` : " Para ratear custos fixos no preço, informe as horas produtivas do mês em Configurações."}</p>

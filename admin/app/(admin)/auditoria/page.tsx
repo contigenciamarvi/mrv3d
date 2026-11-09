@@ -77,7 +77,7 @@ export default function Auditoria() {
                 <Fragment key={l.id}>
                   <tr><Td className="whitespace-nowrap">{dataHora(l.created_at)}</Td><Td>{l.email || "sistema"}</Td>
                     <Td>{ACOES[l.acao] || l.acao}</Td><Td>{ENTIDADES[l.entidade] || l.entidade}</Td>
-                    <Td><button className="text-xs text-brand-600 underline" onClick={() => setAberto(aberto === l.id ? null : l.id)}>{aberto === l.id ? "ocultar" : "detalhes"}</button></Td></tr>
+                    <Td><button className="text-xs text-brand-700 underline" onClick={() => setAberto(aberto === l.id ? null : l.id)}>{aberto === l.id ? "ocultar" : "detalhes"}</button></Td></tr>
                   {aberto === l.id && <tr><Td className="bg-slate-50 dark:bg-slate-800/50"><span /></Td><td colSpan={4} className="bg-slate-50 px-3 py-2 dark:bg-slate-800/50"><pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(l.detalhes, null, 2)}</pre></td></tr>}
                 </Fragment>
               ))}

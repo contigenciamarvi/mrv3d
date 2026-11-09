@@ -66,7 +66,7 @@ export default function Usuarios() {
             <Table head={["E-mail", "Empresas", "Cadastro", "Último acesso", "Situação", ""]}>
               {filtrada.slice((pagina - 1) * 25, pagina * 25).map((u) => (
                 <tr key={u.id}>
-                  <Td><div className="font-medium">{u.email}</div>{u.equipe && <div className="text-xs text-brand-600">{PAPEIS[u.equipe]}</div>}</Td>
+                  <Td><div className="font-medium">{u.email}</div>{u.equipe && <div className="text-xs text-brand-700">{PAPEIS[u.equipe]}</div>}</Td>
                   <Td>{u.empresas.length ? u.empresas.map((e) => <div key={e.id}>{e.nome} <span className="text-xs text-slate-500">({e.papel})</span></div>) : <span className="text-slate-400">—</span>}</Td>
                   <Td className="whitespace-nowrap">{dataHora(u.criado_em)}</Td>
                   <Td className="whitespace-nowrap">{dataHora(u.ultimo_acesso)}</Td>

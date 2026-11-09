@@ -27,7 +27,7 @@ export function EmpresaDetalhe({ empresa, onClose, onChange }: { empresa: Empres
       </div>
       <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800">
         {ABAS.map((a) => (
-          <button key={a} onClick={() => setAba(a)} className={cn("whitespace-nowrap border-b-2 px-3 py-2 text-sm", aba === a ? "border-brand-600 font-medium text-brand-600" : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200")}>{a}</button>
+          <button key={a} onClick={() => setAba(a)} className={cn("whitespace-nowrap border-b-2 px-3 py-2 text-sm", aba === a ? "border-brand-600 font-medium text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200")}>{a}</button>
         ))}
       </div>
       {aba === "Dados" && <Dados e={empresa} onChange={onChange} />}

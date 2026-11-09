@@ -45,7 +45,7 @@ export default function LinkAcesso() {
       <header className="bg-slate-900 px-4 py-4 text-white"><div className="mx-auto max-w-lg"><div className="text-lg font-semibold">{info.empresa}</div><div className="text-sm text-slate-400">Lançamentos · {info.link}</div></div></header>
       <main className="mx-auto max-w-lg space-y-4 p-4">
         <div className="grid gap-1 rounded-lg bg-white p-1 dark:bg-slate-900" style={{ gridTemplateColumns: `repeat(${abas.length}, 1fr)` }}>
-          {abas.map(([k, l]) => <button key={k} onClick={() => { setAba(k); setOk(""); setFalha(""); }} className={cn("h-10 rounded-md text-sm font-medium", aba === k ? "bg-brand-600 text-white" : "text-slate-600")}>{l}</button>)}
+          {abas.map(([k, l]) => <button key={k} onClick={() => { setAba(k); setOk(""); setFalha(""); }} className={cn("h-10 rounded-md text-sm font-medium", aba === k ? "bg-brand-600 text-zinc-950" : "text-slate-600")}>{l}</button>)}
         </div>
         {ok && <Aviso tom="verde">{ok}</Aviso>}
         {falha && <ErrorBox erro={falha} />}
@@ -55,7 +55,7 @@ export default function LinkAcesso() {
               p_tipo_servico: ped.tipo, p_data_entrega: ped.entrega || null, p_cliente_id: ped.modo === "existente" ? ped.cliente_id || null : null,
               p_cliente_nome: ped.modo === "novo" ? ped.cliente_nome || null : null, p_cliente_telefone: ped.modo === "novo" ? ped.cliente_tel || null : null });
             setPed({ ...ped, descricao: "", total: "", pago: "", entrega: "", cliente_nome: "", cliente_tel: "" }); return `Pedido #${r.numero} salvo!`; }); }}>
-            <div className="flex gap-2 text-sm">{[["existente", "Cliente cadastrado"], ["novo", "Cliente novo"]].map(([k, l]) => <button type="button" key={k} onClick={() => setPed({ ...ped, modo: k })} className={cn("rounded-full px-3 py-1", ped.modo === k ? "bg-brand-600 text-white" : "bg-slate-100 dark:bg-slate-800")}>{l}</button>)}</div>
+            <div className="flex gap-2 text-sm">{[["existente", "Cliente cadastrado"], ["novo", "Cliente novo"]].map(([k, l]) => <button type="button" key={k} onClick={() => setPed({ ...ped, modo: k })} className={cn("rounded-full px-3 py-1", ped.modo === k ? "bg-brand-600 text-zinc-950" : "bg-slate-100 dark:bg-slate-800")}>{l}</button>)}</div>
             {ped.modo === "existente" ? <Field label="Cliente"><Select value={ped.cliente_id} onChange={(e) => setPed({ ...ped, cliente_id: e.target.value })}><option value="">Sem cliente</option>{info.clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}</Select></Field>
               : <Grid><Field label="Nome"><Input required value={ped.cliente_nome} onChange={(e) => setPed({ ...ped, cliente_nome: e.target.value })} /></Field><Field label="Telefone"><Input inputMode="tel" value={ped.cliente_tel} onChange={(e) => setPed({ ...ped, cliente_tel: e.target.value })} /></Field></Grid>}
             <Field label="Serviço"><Select value={ped.tipo} onChange={(e) => setPed({ ...ped, tipo: e.target.value })}>{Object.entries(TIPOS_SERVICO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
@@ -77,7 +77,7 @@ export default function LinkAcesso() {
           {aba === "estoque" && <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); enviar(async () => {
             const s = await rpc<number>("link_movimentar_estoque", { p_token: token, p_material_id: mov.material_id, p_tipo: mov.tipo, p_quantidade: numOuNull(mov.quantidade), p_observacao: mov.obs || null });
             setMov({ ...mov, quantidade: "", obs: "" }); return `Registrado! Saldo agora: ${num(s)} ${matSel?.unidade || ""}`; }); }}>
-            <div className="grid grid-cols-3 gap-1">{[["saida", "Usei"], ["entrada", "Comprei"], ["ajuste", "Contei"]].map(([k, l]) => <button type="button" key={k} onClick={() => setMov({ ...mov, tipo: k })} className={cn("h-9 rounded-md text-sm", mov.tipo === k ? "bg-brand-600 text-white" : "bg-slate-100 dark:bg-slate-800")}>{l}</button>)}</div>
+            <div className="grid grid-cols-3 gap-1">{[["saida", "Usei"], ["entrada", "Comprei"], ["ajuste", "Contei"]].map(([k, l]) => <button type="button" key={k} onClick={() => setMov({ ...mov, tipo: k })} className={cn("h-9 rounded-md text-sm", mov.tipo === k ? "bg-brand-600 text-zinc-950" : "bg-slate-100 dark:bg-slate-800")}>{l}</button>)}</div>
             <Field label="Item"><Select required value={mov.material_id} onChange={(e) => setMov({ ...mov, material_id: e.target.value })}><option value="">Escolha…</option>
               {info.materiais.map((m) => <option key={m.id} value={m.id}>{m.nome}{m.cor ? ` · ${m.cor}` : ""} ({num(m.quantidade)} {m.unidade})</option>)}</Select></Field>
             <Field label={mov.tipo === "saida" ? "Quantidade usada" : mov.tipo === "entrada" ? "Quantidade comprada" : "Saldo contado (novo total)"}><Input required inputMode="decimal" value={mov.quantidade} onChange={(e) => setMov({ ...mov, quantidade: e.target.value })} /></Field>

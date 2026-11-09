@@ -135,7 +135,7 @@ export default function Onboarding() {
       <p className="mt-1 text-sm text-slate-500">Cinco passos rápidos. Tudo pode ser alterado depois em Configurações.</p>
       <ol className="my-6 flex flex-wrap gap-2" aria-label="Etapas">
         {ETAPAS.map((n, i) => (
-          <li key={n} className={cn("flex items-center gap-2 rounded-full px-3 py-1 text-sm", i === etapa ? "bg-brand-600 text-white" : i < etapa ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-slate-100 text-slate-500 dark:bg-slate-800")}>
+          <li key={n} className={cn("flex items-center gap-2 rounded-full px-3 py-1 text-sm", i === etapa ? "bg-brand-600 text-zinc-950" : i < etapa ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-slate-100 text-slate-500 dark:bg-slate-800")}>
             {i < etapa ? <Check className="h-3.5 w-3.5" /> : <span className="text-xs">{i + 1}</span>} {n}
           </li>
         ))}

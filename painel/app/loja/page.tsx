@@ -135,7 +135,7 @@ export default function LojaPublica() {
           </form>
         </section>
       </main>
-      <footer className="py-6 text-center text-xs text-slate-400">Loja de {l.nome} · feito com MRV3D</footer>
+      <footer className="py-6 text-center text-xs text-slate-400">Loja de {l.nome} · feito com MRV 3D</footer>
     </div>
   );
 }

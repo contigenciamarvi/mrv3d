@@ -10,6 +10,7 @@ import {
 import { sb, rpc } from "@/lib/supabase";
 import { cn, PAPEIS_EMPRESA } from "@/lib/utils";
 import type { Toast } from "@/lib/toast";
+import { LogoIcone } from "@/components/logo";
 
 export type Config = {
   empresa_id: string; logo_path: string | null; energia_kwh: number; mao_obra_hora: number; margem_pct: number; impostos_pct: number;
@@ -172,7 +173,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center text-sm">
         <AlertTriangle className="h-8 w-8 text-red-500" />
         <p>Não foi possível carregar o painel: {erroInicial}</p>
-        <div className="flex gap-3"><button onClick={() => location.reload()} className="text-brand-600 underline">Tentar de novo</button>
+        <div className="flex gap-3"><button onClick={() => location.reload()} className="text-brand-700 underline">Tentar de novo</button>
           <button onClick={sair} className="text-slate-500 underline">Sair</button></div>
       </div>
     );
@@ -196,7 +197,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             {!compacto && !m.pronto && <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">em breve</span>}
           </>
         );
-        const cls = cn("flex h-9 items-center gap-3 rounded-lg px-3 text-sm", ativo ? "bg-brand-600 text-white" : m.pronto ? "hover:bg-slate-800 hover:text-white" : "cursor-not-allowed opacity-45");
+        const cls = cn("flex h-9 items-center gap-3 rounded-lg px-3 text-sm", ativo ? "bg-brand-600 text-zinc-950" : m.pronto ? "hover:bg-slate-800 hover:text-white" : "cursor-not-allowed opacity-45");
         return m.pronto
           ? <Link key={m.label} href={m.href} className={cls} title={m.label}>{conteudo}</Link>
           : <span key={m.label} className={cls} title={`${m.label} — chega na próxima fase`}>{conteudo}</span>;
@@ -205,7 +206,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
   const Marca = ({ compacto }: { compacto: boolean }) => (
     <div className="flex h-14 items-center gap-2 px-4">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">M3</div>
+      <LogoIcone className="h-8 w-8 shrink-0" titulo="MRV 3D Solutions" />
       {!compacto && <div className="min-w-0 leading-tight"><div className="truncate text-sm font-semibold text-white">{ctx.empresa.nome}</div><div className="text-[11px] text-slate-400">{PAPEIS_EMPRESA[ctx.papel] || ctx.papel}</div></div>}
     </div>
   );
@@ -213,7 +214,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <AppCtx.Provider value={ctx}>
       <div className="flex min-h-screen">
-        <aside className={cn("sticky top-0 hidden h-screen shrink-0 flex-col bg-slate-900 text-slate-300 transition-all md:flex print:hidden", recolhido ? "w-16" : "w-64")}>
+        <aside className={cn("sticky top-0 hidden h-screen shrink-0 flex-col bg-zinc-950 text-zinc-300 transition-all md:flex print:hidden", recolhido ? "w-16" : "w-64")}>
           <Marca compacto={recolhido} />
           <Nav compacto={recolhido} />
           <button onClick={alternarMenu} className="m-2 flex h-9 items-center gap-3 rounded-lg px-3 text-sm hover:bg-slate-800" aria-label={recolhido ? "Expandir menu" : "Recolher menu"}>
@@ -222,7 +223,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </aside>
         {menuMobile && (
           <div className="fixed inset-0 z-50 flex md:hidden" onClick={() => setMenuMobile(false)}>
-            <aside className="flex h-full w-72 flex-col bg-slate-900 text-slate-300" onClick={(e) => e.stopPropagation()}>
+            <aside className="flex h-full w-72 flex-col bg-zinc-950 text-zinc-300" onClick={(e) => e.stopPropagation()}>
               <Marca compacto={false} /><Nav compacto={false} />
             </aside>
             <div className="flex-1 bg-slate-950/50" />
@@ -273,7 +274,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
                       <span className="text-sm font-semibold">Notificações</span>
                       <div className="flex items-center gap-2">
-                        {naoLidas.length > 0 && <button onClick={marcarLidas} className="text-xs text-brand-600 hover:underline">Marcar como lidas</button>}
+                        {naoLidas.length > 0 && <button onClick={marcarLidas} className="text-xs text-brand-700 hover:underline">Marcar como lidas</button>}
                         <button onClick={() => setAbrirNotif(false)} aria-label="Fechar"><X className="h-4 w-4 text-slate-400" /></button>
                       </div>
                     </div>

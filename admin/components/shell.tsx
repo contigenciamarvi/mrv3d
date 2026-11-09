@@ -9,6 +9,7 @@ import {
 import { sb, rpc } from "@/lib/supabase";
 import { cn, PAPEIS } from "@/lib/utils";
 import type { Toast } from "@/lib/toast";
+import { Logo, LogoIcone } from "@/components/logo";
 
 type Sessao = { email: string; userId: string; papel: string };
 const Ctx = createContext<Sessao | null>(null);
@@ -90,7 +91,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         <Lock className="h-8 w-8 text-slate-400" />
         <h1 className="text-lg font-semibold">Acesso restrito à equipe da plataforma</h1>
         <p className="max-w-sm text-sm text-slate-500">A conta {sessao?.email} não faz parte da equipe do Super Admin.</p>
-        <button onClick={sair} className="text-sm text-brand-600 underline">Sair e entrar com outra conta</button>
+        <button onClick={sair} className="text-sm text-brand-700 underline">Sair e entrar com outra conta</button>
       </div>
     );
   }
@@ -100,10 +101,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={sessao}>
       <div className="flex min-h-screen">
-        <aside className={cn("sticky top-0 hidden h-screen shrink-0 flex-col border-r border-slate-200 bg-slate-900 text-slate-300 transition-all md:flex dark:border-slate-800", recolhido ? "w-16" : "w-64")}>
+        <aside className={cn("sticky top-0 hidden h-screen shrink-0 flex-col border-r border-slate-200 bg-zinc-950 text-zinc-300 transition-all md:flex dark:border-slate-800", recolhido ? "w-16" : "w-64")}>
           <div className="flex h-14 items-center gap-2 px-4">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">M3</div>
-            {!recolhido && <div className="leading-tight"><div className="text-sm font-semibold text-white">MRV3D Solutions</div><div className="text-[11px] text-slate-400">Super Admin</div></div>}
+            {recolhido ? <LogoIcone className="h-8 w-8" titulo="MRV 3D Solutions" /> : <div className="flex items-center gap-2"><Logo tamanho="sm" /><span className="rounded bg-brand-600/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-300">Admin</span></div>}
           </div>
           <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
             {itens.map((m) => {
@@ -116,7 +116,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   {!recolhido && !m.pronto && <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">em breve</span>}
                 </>
               );
-              const cls = cn("flex h-9 items-center gap-3 rounded-lg px-3 text-sm", ativo ? "bg-brand-600 text-white" : m.pronto ? "hover:bg-slate-800 hover:text-white" : "cursor-not-allowed opacity-50");
+              const cls = cn("flex h-9 items-center gap-3 rounded-lg px-3 text-sm", ativo ? "bg-brand-600 text-zinc-950" : m.pronto ? "hover:bg-slate-800 hover:text-white" : "cursor-not-allowed opacity-50");
               return m.pronto
                 ? <Link key={m.label} href={m.href} className={cls} title={m.label}>{conteudo}</Link>
                 : <span key={m.label} className={cls} title={`${m.label} — próxima fase`}>{conteudo}</span>;
@@ -144,7 +144,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </header>
           <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 md:hidden dark:border-slate-800 dark:bg-slate-900">
             {itens.filter((m) => m.pronto).map((m) => (
-              <Link key={m.label} href={m.href} className={cn("whitespace-nowrap rounded-full px-3 py-1 text-sm", path?.startsWith(m.href.replace(/\/$/, "")) ? "bg-brand-600 text-white" : "bg-slate-100 dark:bg-slate-800")}>{m.label}</Link>
+              <Link key={m.label} href={m.href} className={cn("whitespace-nowrap rounded-full px-3 py-1 text-sm", path?.startsWith(m.href.replace(/\/$/, "")) ? "bg-brand-600 text-zinc-950" : "bg-slate-100 dark:bg-slate-800")}>{m.label}</Link>
             ))}
           </nav>
           <main className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">{children}</main>

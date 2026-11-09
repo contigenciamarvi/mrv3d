@@ -131,7 +131,7 @@ function Calendario({ ops, onAbrir }: { ops: Op[]; onAbrir: (id: string) => void
       <div className="grid grid-cols-7 gap-1 text-xs">
         {dias.map((d) => { const l = ops.filter((o) => o.prazo === d && o.status !== "cancelada"); const hoje = d === hojeISO(); return (
           <div key={d} className={cn("min-h-24 rounded-lg border p-1", hoje ? "border-brand-500" : "border-slate-200 dark:border-slate-700")}>
-            <div className={cn("mb-1 font-medium", hoje && "text-brand-600")}>{new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</div>
+            <div className={cn("mb-1 font-medium", hoje && "text-brand-700")}>{new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</div>
             {l.map((o) => <button key={o.id} onClick={() => onAbrir(o.id)} className={cn("mb-1 block w-full truncate rounded px-1 py-0.5 text-left", o.status === "concluida" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300" : o.status === "falha" ? "bg-red-100 text-red-800" : "bg-brand-50 text-brand-800 dark:bg-brand-500/20 dark:text-brand-300")}>OP-{o.numero} {o.descricao}</button>)}
           </div>); })}
       </div>
@@ -209,7 +209,7 @@ function Detalhe({ id, imps, mats, equipe, onClose, onMudou, onAbrir }: {
     <Modal aberto titulo={`OP-${o.numero} · ${o.descricao}`} onClose={onClose} largura="max-w-4xl">
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Badge tom={tomStatus(o.status)}>{STATUS_OP[o.status]}</Badge>
-        {o.pedidos && <Link href={`/pedidos/?id=${o.pedido_id}`} className="text-sm text-brand-600 underline">Pedido {o.pedidos.numero}{o.pedidos.clientes ? ` · ${o.pedidos.clientes.nome}` : ""}</Link>}
+        {o.pedidos && <Link href={`/pedidos/?id=${o.pedido_id}`} className="text-sm text-brand-700 underline">Pedido {o.pedidos.numero}{o.pedidos.clientes ? ` · ${o.pedidos.clientes.nome}` : ""}</Link>}
         {o.reimpressao_de && <button onClick={() => onAbrir(o.reimpressao_de!)} className="text-sm text-amber-700 underline">Reimpressão de uma ordem que falhou</button>}
         {dados.reimp.map((r) => <button key={r.id} onClick={() => onAbrir(r.id)} className="text-sm text-amber-700 underline">Reimpressão: OP-{r.numero} ({STATUS_OP[r.status]})</button>)}
       </div>
@@ -264,7 +264,7 @@ function Detalhe({ id, imps, mats, equipe, onClose, onMudou, onAbrir }: {
           </div>}
           <div>
             <div className="mb-1 text-sm font-medium">Fotos da peça</div>
-            <div className="space-y-1">{dados.fotos.map((f) => <button key={f.id} onClick={async () => { try { window.open(await urlTemporaria(f.path), "_blank", "noopener"); } catch (e) { erro(e); } }} className="flex items-center gap-1 text-sm text-brand-600 hover:underline"><Paperclip className="h-3 w-3" /> {f.nome}</button>)}</div>
+            <div className="space-y-1">{dados.fotos.map((f) => <button key={f.id} onClick={async () => { try { window.open(await urlTemporaria(f.path), "_blank", "noopener"); } catch (e) { erro(e); } }} className="flex items-center gap-1 text-sm text-brand-700 hover:underline"><Paperclip className="h-3 w-3" /> {f.nome}</button>)}</div>
             {pode && <label className={cn("mt-1 flex cursor-pointer items-center gap-1 text-sm text-slate-500 hover:underline", enviando && "opacity-50")}><Upload className="h-3.5 w-3.5" /> {enviando ? "Enviando…" : "Adicionar foto"}
               <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" disabled={enviando} onChange={async (e) => { const a = e.target.files?.[0]; if (!a) return; setEnviando(true); try { const path = await enviarArquivo(app.empresa.id, "producao", a); await q(sb().from("ordem_fotos").insert({ empresa_id: app.empresa.id, ordem_id: id, path, nome: a.name })); recarregar(); } catch (e2) { erro(e2); } finally { setEnviando(false); } }} /></label>}
           </div>

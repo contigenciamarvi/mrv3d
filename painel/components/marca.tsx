@@ -1,6 +1,7 @@
 "use client";
 import { useEffect } from "react";
 import { Calculator, Factory, Activity, Boxes, ShieldCheck } from "lucide-react";
+import { Logo } from "@/components/logo";
 
 const RECURSOS = [
   { icon: Calculator, titulo: "Orçamento automático", texto: "Importe o arquivo do Bambu Studio e veja custo, margem e preço na hora." },
@@ -15,7 +16,7 @@ function Impressao() {
   return (
     <svg viewBox="0 0 320 220" className="h-auto w-full max-w-sm" aria-hidden="true">
       <defs>
-        <linearGradient id="cam" x1="0" x2="1"><stop offset="0" stopColor="#60a5fa" /><stop offset="1" stopColor="#2563eb" /></linearGradient>
+        <linearGradient id="cam" x1="0" x2="1"><stop offset="0" stopColor="#F8E3A1" /><stop offset=".5" stopColor="#D4AF37" /><stop offset="1" stopColor="#A67C1B" /></linearGradient>
         <linearGradient id="mesa" x1="0" x2="1"><stop offset="0" stopColor="#334155" /><stop offset="1" stopColor="#1e293b" /></linearGradient>
       </defs>
       {/* mesa */}
@@ -30,7 +31,7 @@ function Impressao() {
         </rect>;
       })}
       {/* camada sendo depositada */}
-      <rect x="130" y="62" width="0" height="9" rx="4.5" fill="#93c5fd">
+      <rect x="130" y="62" width="0" height="9" rx="4.5" fill="#F5E6B0">
         <animate attributeName="width" values="0;60;60;0" keyTimes="0;0.6;0.9;1" dur="3s" repeatCount="indefinite" />
       </rect>
       {/* bico */}
@@ -54,26 +55,25 @@ export function TelaCentral({ children, sub }: { children: React.ReactNode; sub?
   return (
     <div className="flex min-h-screen bg-white text-slate-900">
       {/* lado da marca */}
-      <aside className="relative hidden w-[52%] flex-col justify-between overflow-hidden bg-slate-950 p-10 text-white lg:flex xl:p-14">
+      <aside className="relative hidden w-[52%] flex-col justify-between overflow-hidden bg-zinc-950 p-10 text-white lg:flex xl:p-14">
         <div className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)", backgroundSize: "32px 32px" }} />
-        <div className="pointer-events-none absolute -right-32 -top-32 h-96 w-96 rounded-full bg-blue-600/30 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-40 -left-20 h-96 w-96 rounded-full bg-indigo-500/20 blur-3xl" />
+        <div className="pointer-events-none absolute -right-32 -top-32 h-96 w-96 rounded-full bg-amber-500/20 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-40 -left-20 h-96 w-96 rounded-full bg-yellow-700/15 blur-3xl" />
 
         <div className="relative flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold shadow-lg shadow-blue-600/30">M3</div>
-          <div><div className="font-semibold">MRV3D Solutions</div><div className="text-xs text-slate-400">Gestão para impressão 3D</div></div>
+          <Logo tamanho="lg" />
         </div>
 
         <div className="relative space-y-8">
           <div>
-            <h2 className="max-w-md text-3xl font-semibold leading-tight xl:text-4xl">Do arquivo fatiado ao pedido entregue, <span className="text-blue-400">tudo num lugar só.</span></h2>
+            <h2 className="max-w-md text-3xl font-semibold leading-tight xl:text-4xl">Do arquivo fatiado ao pedido entregue, <span className="text-brand-400">tudo num lugar só.</span></h2>
             <p className="mt-3 max-w-md text-slate-400">O sistema de gestão feito para quem vive de impressão 3D.</p>
           </div>
           <Impressao />
           <ul className="grid max-w-xl gap-4 sm:grid-cols-2">
             {RECURSOS.map(({ icon: I, titulo, texto }) => (
               <li key={titulo} className="flex gap-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/10"><I className="h-4 w-4 text-blue-300" /></span>
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/10"><I className="h-4 w-4 text-brand-300" /></span>
                 <span><span className="block text-sm font-medium">{titulo}</span><span className="block text-xs leading-relaxed text-slate-400">{texto}</span></span>
               </li>))}
           </ul>
@@ -85,16 +85,15 @@ export function TelaCentral({ children, sub }: { children: React.ReactNode; sub?
       {/* formulário */}
       <main className="flex flex-1 flex-col">
         <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-4 lg:hidden">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">M3</div>
-          <div><div className="font-semibold">MRV3D Solutions</div><div className="text-xs text-slate-500">{sub || "Gestão para impressão 3D"}</div></div>
+          <Logo claro tamanho="sm" />
         </div>
         <div className="flex flex-1 items-center justify-center p-6 sm:p-10">
           <div className="w-full max-w-sm">
-            {sub && <p className="mb-2 hidden text-sm font-medium text-blue-600 lg:block">{sub}</p>}
+            {sub && <p className="mb-2 hidden text-sm font-medium text-brand-700 lg:block">{sub}</p>}
             {children}
           </div>
         </div>
-        <footer className="px-6 py-4 text-center text-xs text-slate-400">© {new Date().getFullYear()} MRV3D Solutions · mrv3dsolutions.tech</footer>
+        <footer className="px-6 py-4 text-center text-xs text-slate-400">© {new Date().getFullYear()} MRV 3D Solutions · mrv3dsolutions.tech</footer>
       </main>
     </div>
   );

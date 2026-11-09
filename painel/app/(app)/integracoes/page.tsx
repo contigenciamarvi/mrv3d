@@ -35,7 +35,7 @@ export default function Integracoes() {
       <PageHeader titulo="Integrações" sub="Integrações sem credenciais aparecem como “Não configurada” — nunca como funcionando" />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{cards.map((c) => (
         <Card key={c.nome} className="flex flex-col gap-3">
-          <div className="flex items-start gap-3"><c.icone className="h-6 w-6 shrink-0 text-brand-600" /><div><div className="font-semibold">{c.nome}</div><p className="text-sm text-slate-500">{c.desc}</p></div></div>
+          <div className="flex items-start gap-3"><c.icone className="h-6 w-6 shrink-0 text-brand-700" /><div><div className="font-semibold">{c.nome}</div><p className="text-sm text-slate-500">{c.desc}</p></div></div>
           <div className="mt-auto flex items-center justify-between gap-2"><div><Badge tom={c.status[1]}>{c.status[0]}</Badge>{c.detalhe && <div className="mt-1 text-xs text-slate-500">{c.detalhe}</div>}</div>
             {c.href ? <Link href={c.href}><Button size="sm" variant="secondary">Abrir</Button></Link> : <span className="text-xs text-slate-400">Em breve</span>}</div>
         </Card>))}</div>

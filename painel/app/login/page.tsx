@@ -80,15 +80,15 @@ export default function Login() {
         {(modo === "criar" || modo === "nova-senha") && (
           <Field label="Repita a senha"><Input type={ver ? "text" : "password"} required autoComplete="new-password" value={senha2} onChange={(e) => setSenha2(e.target.value)} /></Field>
         )}
-        {modo === "entrar" && <div className="-mt-2 text-right text-sm"><button type="button" className="text-slate-500 hover:text-brand-600 hover:underline" onClick={() => trocar("esqueci")}>Esqueci a senha</button></div>}
+        {modo === "entrar" && <div className="-mt-2 text-right text-sm"><button type="button" className="text-slate-500 hover:text-brand-700 hover:underline" onClick={() => trocar("esqueci")}>Esqueci a senha</button></div>}
         <Button type="submit" loading={carregando} className="h-11 w-full text-base">{modo === "esqueci" ? "Enviar link" : titulos[modo]}</Button>
         {modo === "entrar" ? (
           <>
-            <div className="relative py-2 text-center text-xs text-slate-400"><span className="absolute inset-x-0 top-1/2 border-t border-slate-200" /><span className="relative bg-white px-3">Ainda não usa o MRV3D?</span></div>
+            <div className="relative py-2 text-center text-xs text-slate-400"><span className="absolute inset-x-0 top-1/2 border-t border-slate-200" /><span className="relative bg-white px-3">Ainda não usa o MRV 3D?</span></div>
             <Button type="button" variant="secondary" className="h-11 w-full" onClick={() => trocar("criar")}>Criar conta grátis</Button>
           </>
         ) : (
-          <div className="text-center text-sm"><button type="button" className="text-brand-600 hover:underline" onClick={() => trocar("entrar")}>Voltar para entrar</button></div>
+          <div className="text-center text-sm"><button type="button" className="text-brand-700 hover:underline" onClick={() => trocar("entrar")}>Voltar para entrar</button></div>
         )}
       </form>
     </TelaCentral>

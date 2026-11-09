@@ -15,7 +15,7 @@ export function DocumentoOrcamento({ d }: { d: DocOrcamento }) {
     <article className="mx-auto max-w-3xl bg-white p-8 text-slate-900 print:p-0">
       <header className="flex items-start justify-between gap-6 border-b border-slate-200 pb-5">
         <div className="flex items-center gap-3">
-          {d.logo ? <img src={d.logo} alt="" className="h-14 w-14 rounded object-contain" /> : <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-600 font-bold text-white">{d.empresa.nome.slice(0, 2).toUpperCase()}</div>}
+          {d.logo ? <img src={d.logo} alt="" className="h-14 w-14 rounded object-contain" /> : <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-800 font-bold text-white">{d.empresa.nome.slice(0, 2).toUpperCase()}</div>}
           <div><div className="text-lg font-semibold">{d.empresa.nome}</div>
             <div className="text-xs text-slate-500">{[d.empresa.documento, formatarEndereco(d.empresa, false)].filter(Boolean).join(" · ")}</div>
             <div className="text-xs text-slate-500">{[d.empresa.whatsapp, d.empresa.email].filter(Boolean).join(" · ")}</div></div>

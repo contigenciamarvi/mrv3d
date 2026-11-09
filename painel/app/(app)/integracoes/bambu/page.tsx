@@ -83,7 +83,7 @@ function Impressoras() {
       {falha ? <ErrorBox erro={falha} onRetry={recarregar} /> : carregando && !dados ? <Loading /> : !bambu.length ? <Empty texto="Nenhuma impressora Bambu Lab cadastrada. Cadastre em Impressoras 3D (fabricante Bambu Lab)." /> : (
         <Table head={["Impressora", "Modelo", "Número de série", "Monitoramento"]}>{bambu.map((i) => (
           <tr key={i.id}><Td className="font-medium">{i.nome}</Td><Td>{i.modelo || "—"}</Td><Td className="font-mono text-xs">{i.dispositivo_id || "—"}</Td>
-            <Td>{i.conexao_tipo === "bambu_lan" ? <Badge tom="verde">Ligada ao agente</Badge> : <Link className="text-sm text-brand-600 underline" href="/impressoras/monitoramento/">Conectar</Link>}</Td></tr>))}</Table>)}
+            <Td>{i.conexao_tipo === "bambu_lan" ? <Badge tom="verde">Ligada ao agente</Badge> : <Link className="text-sm text-brand-700 underline" href="/impressoras/monitoramento/">Conectar</Link>}</Td></tr>))}</Table>)}
       <p className="mt-3 text-xs text-slate-500">Sincronização de impressoras da conta Bambu (nuvem): não disponível sem autorização oficial. A lista vem do seu cadastro e do agente local.</p>
     </Card>
   );
@@ -149,7 +149,7 @@ function Config() {
             <tr key={a.id} className={cn(!a.ativo && "opacity-50")}><Td className="font-medium">{a.nome}</Td><Td className="text-sm">{[a.maquina, a.sistema].filter(Boolean).join(" · ") || "—"}</Td><Td>{a.versao || "—"}</Td>
               <Td className="text-sm">{dataHora(a.ultimo_contato)}</Td>
               <Td>{!a.ativo ? <Badge>{a.revogado_por === "plataforma" ? "Revogado pela plataforma" : "Revogado"}</Badge> : online(a) ? <Badge tom="verde">Online</Badge> : a.ultimo_contato ? <Badge tom="amarelo">Offline</Badge> : <Badge tom="cinza">Nunca conectou</Badge>}</Td>
-              <Td className="text-sm">{a.dispositivos_detectados.length ? <Link className="text-brand-600 underline" href="/impressoras/monitoramento/">{a.dispositivos_detectados.length} não ligada(s)</Link> : "—"}</Td>
+              <Td className="text-sm">{a.dispositivos_detectados.length ? <Link className="text-brand-700 underline" href="/impressoras/monitoramento/">{a.dispositivos_detectados.length} não ligada(s)</Link> : "—"}</Td>
               <Td>{a.ativo && app.podeEscrever && <Button size="sm" variant="ghost" onClick={() => setRevogar(a)}><Ban className="h-4 w-4" /> Revogar</Button>}</Td></tr>))}</Table>)}
         <p className="mt-3 text-xs text-slate-500">Revogar invalida a credencial do agente na hora. Para usar de novo, gere outro código.</p>
       </Card>

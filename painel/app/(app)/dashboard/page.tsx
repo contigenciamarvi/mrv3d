@@ -154,7 +154,7 @@ export default function Dashboard() {
               </Card>
             )}
             {d.proximas_entregas && ver("entregas") && (
-              <Card><CardTitle right={<Link href="/pedidos/" className="text-sm text-brand-600">Ver pedidos</Link>}>Próximas entregas</CardTitle>
+              <Card><CardTitle right={<Link href="/pedidos/" className="text-sm text-brand-700">Ver pedidos</Link>}>Próximas entregas</CardTitle>
                 {d.proximas_entregas.length === 0 ? <Empty texto="Nenhuma entrega programada" /> : (
                   <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
                     {d.proximas_entregas.map((p) => (
@@ -177,7 +177,7 @@ export default function Dashboard() {
               </Card>
             )}
             {d.consumo_materia && ver("consumo") && (
-              <Card><CardTitle right={<Link href="/materia-prima/" className="text-sm text-brand-600">Matéria-prima</Link>}>Consumo de matéria-prima</CardTitle>
+              <Card><CardTitle right={<Link href="/materia-prima/" className="text-sm text-brand-700">Matéria-prima</Link>}>Consumo de matéria-prima</CardTitle>
                 {d.consumo_materia.length === 0 ? <Empty texto="Nenhuma saída no período" /> : (
                   <ul className="space-y-2 text-sm">{d.consumo_materia.map((c, i) => (
                     <li key={i} className="flex justify-between gap-2"><span className="truncate">{c.nome}</span>

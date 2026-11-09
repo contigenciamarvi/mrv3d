@@ -201,11 +201,11 @@ function DetalheCliente({ c, resumo, pode, onClose, onEditar, onArquivar, onExcl
       <Tabs abas={[["pedidos", "Pedidos"], ["orcamentos", "Orçamentos"], ["pagamentos", "Pagamentos"], ["dados", "Dados"]]} ativa={aba} onChange={setAba} />
       {carregando ? <Loading /> : aba === "pedidos" ? (
         dados?.pedidos.length ? <Table head={["Pedido", "Data", "Situação", "Valor"]}>{dados.pedidos.map((p) => (
-          <tr key={p.id}><Td><Link href={`/pedidos/?id=${p.id}`} className="text-brand-600 hover:underline">#{p.numero}</Link> {p.descricao}</Td><Td>{data(p.created_at)}</Td>
+          <tr key={p.id}><Td><Link href={`/pedidos/?id=${p.id}`} className="text-brand-700 hover:underline">#{p.numero}</Link> {p.descricao}</Td><Td>{data(p.created_at)}</Td>
             <Td><Badge tom={tomStatus(p.status)}>{STATUS_PEDIDO[p.status]}</Badge></Td><Td className="tnum">{brl(p.valor_total)}</Td></tr>))}</Table> : <Empty texto="Nenhum pedido" />
       ) : aba === "orcamentos" ? (
         dados?.orcamentos.length ? <Table head={["Orçamento", "Data", "Situação", "Total"]}>{dados.orcamentos.map((o) => (
-          <tr key={o.id}><Td><Link href={`/orcamentos/editar/?id=${o.id}`} className="text-brand-600 hover:underline">#{o.numero}</Link> {o.titulo}</Td><Td>{data(o.created_at)}</Td>
+          <tr key={o.id}><Td><Link href={`/orcamentos/editar/?id=${o.id}`} className="text-brand-700 hover:underline">#{o.numero}</Link> {o.titulo}</Td><Td>{data(o.created_at)}</Td>
             <Td><Badge tom={tomStatus(o.status)}>{STATUS_ORCAMENTO[o.status]}</Badge></Td><Td className="tnum">{brl(o.total)}</Td></tr>))}</Table> : <Empty texto="Nenhum orçamento" />
       ) : aba === "pagamentos" ? (
         dados?.pedidos.filter((p) => p.valor_pago > 0 || p.valor_total > 0).length ? (

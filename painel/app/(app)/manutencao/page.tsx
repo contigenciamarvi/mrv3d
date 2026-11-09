@@ -210,7 +210,7 @@ function Anexos({ m, edita, onClose }: { m: Man; edita: boolean; onClose: () => 
       {!dados ? <Loading /> : !dados.length ? <Empty texto="Nenhum anexo" /> : (
         <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">{dados.map((a) => (
           <li key={a.id} className="flex items-center justify-between gap-2 py-2">
-            <button className="truncate text-left text-brand-600 underline" onClick={async () => { try { window.open(await urlTemporaria(a.path), "_blank"); } catch (e) { erro(e); } }}>{a.nome}</button>
+            <button className="truncate text-left text-brand-700 underline" onClick={async () => { try { window.open(await urlTemporaria(a.path), "_blank"); } catch (e) { erro(e); } }}>{a.nome}</button>
             {edita && <button aria-label="Remover" className="text-slate-400 hover:text-red-600" onClick={async () => { try { await q(sb().from("manutencao_anexos").delete().eq("id", a.id)); await sb().storage.from("empresa").remove([a.path]); recarregar(); } catch (e) { erro(e); } }}><Trash2 className="h-4 w-4" /></button>}
           </li>))}</ul>)}
       {edita && <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">

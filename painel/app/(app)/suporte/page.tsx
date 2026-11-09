@@ -36,7 +36,7 @@ export default function Suporte() {
       <PageHeader titulo="Suporte" sub="Fale com a equipe da plataforma: dúvidas, problemas, assinatura e sugestões"
         acoes={app.podeEscrever && <Button onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo chamado</Button>} />
       {p && (p.email_suporte || p.whatsapp_suporte) && <Card className="mb-4"><div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-        <LifeBuoy className="h-5 w-5 text-brand-600" />
+        <LifeBuoy className="h-5 w-5 text-brand-700" />
         {p.whatsapp_suporte && <a className="flex items-center gap-1 text-brand-700 hover:underline" href={`https://wa.me/${p.whatsapp_suporte.length <= 11 ? "55" : ""}${p.whatsapp_suporte}`} target="_blank" rel="noopener noreferrer"><MessageCircle className="h-4 w-4" /> WhatsApp do suporte</a>}
         {p.email_suporte && <a className="flex items-center gap-1 text-brand-700 hover:underline" href={`mailto:${p.email_suporte}`}><Mail className="h-4 w-4" /> {p.email_suporte}</a>}
         {p.horario_suporte && <span className="text-slate-500">{p.horario_suporte}</span>}
@@ -100,7 +100,7 @@ function Conversa({ id, onClose }: { id: string; onClose: () => void }) {
         <div className="flex flex-wrap items-center gap-2 text-sm"><Badge tom={tom(c.status)}>{SITUACAO[c.status]}</Badge><span className="text-slate-500">{CATEGORIA[c.categoria]} · aberto em {dataHora(c.created_at)}</span></div>
         <div className="max-h-96 space-y-2 overflow-y-auto rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
           {dados.msgs.map((m) => (
-            <div key={m.id} className={cn("max-w-[85%] rounded-lg px-3 py-2 text-sm", m.autor_tipo === "loja" ? "ml-auto bg-brand-600 text-white" : "bg-white shadow-sm dark:bg-slate-900")}>
+            <div key={m.id} className={cn("max-w-[85%] rounded-lg px-3 py-2 text-sm", m.autor_tipo === "loja" ? "ml-auto bg-brand-600 text-zinc-950" : "bg-white shadow-sm dark:bg-slate-900")}>
               <div className={cn("mb-1 text-xs", m.autor_tipo === "loja" ? "text-blue-100" : "text-slate-500")}>{m.autor_tipo === "plataforma" ? `Suporte · ${m.autor_nome || ""}` : m.autor_nome} · {dataHora(m.created_at)}</div>
               <div className="whitespace-pre-wrap break-words">{m.texto}</div>
             </div>))}

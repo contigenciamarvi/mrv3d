@@ -51,7 +51,7 @@ function Conteudo() {
         {aba === "prontos" && <Card>
           {!dados.prontos.length ? <Empty texto="Nenhum pedido pronto. Pedidos aparecem aqui quando a produção termina." /> : (
             <Table head={["Pedido", "Cliente", "Prazo", "Pagamento", ""]}>{dados.prontos.map((p) => (
-              <tr key={p.id}><Td><Link href={`/pedidos/?id=${p.id}`} className="font-medium text-brand-600 hover:underline">#{p.numero}</Link> {p.descricao}</Td>
+              <tr key={p.id}><Td><Link href={`/pedidos/?id=${p.id}`} className="font-medium text-brand-700 hover:underline">#{p.numero}</Link> {p.descricao}</Td>
                 <Td>{p.clientes?.nome || "—"}</Td><Td className={cn(p.data_entrega && p.data_entrega < hoje && "font-medium text-red-600")}>{data(p.data_entrega)}</Td>
                 <Td><Badge tom={tomStatus(p.status_pagamento)}>{STATUS_PAGAMENTO[p.status_pagamento]}</Badge></Td>
                 <Td>{edita && <Button size="sm" onClick={() => setCriar({ p, modalidade: "correios" })}><Send className="h-4 w-4" /> Expedir</Button>}</Td></tr>))}</Table>)}
@@ -206,9 +206,9 @@ function DetalheEnvio({ id, edita, onClose, onMudou }: { id: string; edita: bool
 
           <div className="grid gap-4 md:grid-cols-2">
             <div><h3 className="mb-2 text-sm font-semibold">Comprovante de entrega / postagem</h3>
-              {e.comprovante_path ? <button className="text-sm text-brand-600 underline" onClick={async () => { try { window.open(await urlTemporaria(e.comprovante_path!), "_blank"); } catch (e2) { erro(e2); } }}>Abrir comprovante</button>
+              {e.comprovante_path ? <button className="text-sm text-brand-700 underline" onClick={async () => { try { window.open(await urlTemporaria(e.comprovante_path!), "_blank"); } catch (e2) { erro(e2); } }}>Abrir comprovante</button>
                 : <p className="text-sm text-slate-500">Nenhum anexado.</p>}
-              {edita && <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-brand-600"><Paperclip className="h-4 w-4" /> {e.comprovante_path ? "Trocar" : "Anexar"} foto ou PDF
+              {edita && <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-brand-700"><Paperclip className="h-4 w-4" /> {e.comprovante_path ? "Trocar" : "Anexar"} foto ou PDF
                 <input type="file" accept="image/*,.pdf" className="hidden" onChange={async (ev) => { const a = ev.target.files?.[0]; if (!a) return; try { const path = await enviarArquivo(app.empresa.id, "expedicao", a); await q(sb().from("envios").update({ comprovante_path: path }).eq("id", id)); toast("Comprovante anexado"); mudou(); } catch (e2) { erro(e2); } }} /></label>}
             </div>
             <div><h3 className="mb-2 text-sm font-semibold">Histórico</h3>

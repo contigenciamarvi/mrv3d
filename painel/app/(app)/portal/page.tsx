@@ -87,7 +87,7 @@ function Detalhe({ s, onClose, onMudou }: { s: Sol | null; onClose: () => void; 
         </Grid>
         {s.observacoes && <div><div className="text-xs text-slate-500">Observações</div><p className="whitespace-pre-line">{s.observacoes}</p></div>}
         {s.arquivos.length > 0 && <div><div className="mb-1 text-xs text-slate-500">Arquivos 3D</div>
-          <ul className="space-y-1">{s.arquivos.map((a) => <li key={a.path}><button className="inline-flex items-center gap-1 text-brand-600 underline" onClick={async () => { try { window.open(await urlTemporaria(a.path), "_blank"); } catch (e) { erro(e); } }}>
+          <ul className="space-y-1">{s.arquivos.map((a) => <li key={a.path}><button className="inline-flex items-center gap-1 text-brand-700 underline" onClick={async () => { try { window.open(await urlTemporaria(a.path), "_blank"); } catch (e) { erro(e); } }}>
             <Download className="h-3.5 w-3.5" /> {a.nome}</button>{a.tamanho ? <span className="text-xs text-slate-500"> · {num(a.tamanho / 1048576, 1)} MB</span> : null}</li>)}</ul></div>}
         {s.motivo_recusa && <Aviso tom="vermelho">Recusada: {s.motivo_recusa}</Aviso>}
         <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">

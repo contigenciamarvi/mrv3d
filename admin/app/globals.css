@@ -4,11 +4,27 @@
 
 @theme inline {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --color-brand-50: #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
+}
+
+/* Identidade MRV 3D Solutions: dourado + preto. Botões dourados levam texto escuro (contraste). */
+@theme {
+  --color-brand-50: #fbf7ea;
+  --color-brand-100: #f5eacb;
+  --color-brand-200: #eedaa0;
+  --color-brand-300: #e6cd7e;
+  --color-brand-400: #ddbe55;
+  --color-brand-500: #d4af37;
+  --color-brand-600: #c29b26;
+  --color-brand-700: #8a6516;
+  --color-brand-800: #6b4e10;
+  --color-brand-900: #4a360b;
+}
+/* no modo escuro, texto e destaques dourados mais claros para ler bem sobre o fundo escuro */
+.dark {
+  --color-brand-50: rgba(212, 175, 55, 0.12);
+  --color-brand-100: rgba(212, 175, 55, 0.2);
+  --color-brand-700: #e6cd7e;
+  --color-brand-800: #eedaa0;
 }
 
 html { color-scheme: light; }

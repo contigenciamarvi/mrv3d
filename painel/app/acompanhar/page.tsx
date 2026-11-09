@@ -48,7 +48,7 @@ export default function Acompanhar() {
         {novo && <Aviso tom="verde">Pedido enviado! Guarde este link (ou salve nos favoritos) para acompanhar a proposta e a entrega.</Aviso>}
         {recusada && <Aviso tom="vermelho">A loja não conseguiu atender este pedido{s.motivo_recusa ? `: ${s.motivo_recusa}` : "."}</Aviso>}
         {o?.status === "enviado" && o.token && <a href={`/orcamento/?t=${o.token}`} className="block"><Button className="w-full"><FileText className="h-4 w-4" /> Ver proposta e aprovar ({brl(o.total)})</Button></a>}
-        {o && o.status !== "enviado" && o.token && <a href={`/orcamento/?t=${o.token}`} className="block text-center text-sm text-brand-600 underline">Ver a proposta</a>}
+        {o && o.status !== "enviado" && o.token && <a href={`/orcamento/?t=${o.token}`} className="block text-center text-sm text-brand-700 underline">Ver a proposta</a>}
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
           <ol className="space-y-3">{etapas.map((x, i) => (
             <li key={i} className="flex gap-3">{x.ok ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" /> : <Circle className="h-5 w-5 shrink-0 text-slate-300" />}

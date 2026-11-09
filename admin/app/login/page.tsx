@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { sb } from "@/lib/supabase";
 import { Button, Field, Input, ErrorBox } from "@/components/ui";
+import { Logo } from "@/components/logo";
 
 export default function Login() {
   const router = useRouter();
@@ -20,11 +21,11 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-900 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-950 p-4">
       <form onSubmit={entrar} className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">M3</div>
-          <div><div className="font-semibold">MRV3D Solutions</div><div className="text-xs text-slate-500">Super Admin</div></div>
+          <Logo claro />
+          <span className="ml-auto rounded bg-brand-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-brand-700">Super Admin</span>
         </div>
         {erro && <ErrorBox erro={erro} />}
         <Field label="E-mail"><Input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>

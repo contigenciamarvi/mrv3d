@@ -232,7 +232,7 @@ function Detalhe({ id, clis, onClose, onMudou }: { id: string; clis: { id: strin
             {["aguardando", "nao_aplica"].includes(p.status_producao) && <Field label="Produção"><Select value={f.status_producao} onChange={(e) => setF({ ...f, status_producao: e.target.value })}><option value="aguardando">Precisa produzir</option><option value="nao_aplica">Sem produção</option></Select></Field>}
           </Grid>
           <Field label="Observações"><Textarea value={f.observacoes} onChange={(e) => setF({ ...f, observacoes: e.target.value })} /></Field>
-          {p.orcamento_id && <p className="text-sm">Veio do <Link href={`/orcamentos/editar/?id=${p.orcamento_id}`} className="text-brand-600 underline">orçamento</Link> — os valores aprovados ficam guardados lá.</p>}
+          {p.orcamento_id && <p className="text-sm">Veio do <Link href={`/orcamentos/editar/?id=${p.orcamento_id}`} className="text-brand-700 underline">orçamento</Link> — os valores aprovados ficam guardados lá.</p>}
         </fieldset>
         {pode && !cancelado && <div className="flex justify-end"><Button type="submit">Salvar</Button></div>}
       </form>}
@@ -267,7 +267,7 @@ function Detalhe({ id, clis, onClose, onMudou }: { id: string; clis: { id: strin
 
       {aba === "producao" && <div className="space-y-3">
         {!dados.ops.length ? <Empty texto={p.status_producao === "nao_aplica" ? "Este pedido não precisa de produção" : "Nenhuma ordem de produção"} /> : <Table head={["Ordem", "Impressora", "Situação", verCusto ? "Custo real" : ""]}>{dados.ops.map((o) => (
-          <tr key={o.id}><Td><Link href={`/producao/?id=${o.id}`} className="text-brand-600 hover:underline">OP-{o.numero}</Link> {o.descricao} ({num(o.quantidade)} un)</Td><Td>{o.impressoras?.nome || "—"}</Td>
+          <tr key={o.id}><Td><Link href={`/producao/?id=${o.id}`} className="text-brand-700 hover:underline">OP-{o.numero}</Link> {o.descricao} ({num(o.quantidade)} un)</Td><Td>{o.impressoras?.nome || "—"}</Td>
             <Td><Badge tom={tomStatus(o.status)}>{STATUS_OP[o.status]}</Badge></Td><Td className="tnum">{verCusto && o.custo_real_total > 0 ? brl(o.custo_real_total) : ""}</Td></tr>))}</Table>}
         {app.pode("producao_gerenciar") && app.podeEscrever && !cancelado && p.status_producao !== "nao_aplica" && dados.itens.length > 0 && (
           <Button variant="secondary" onClick={async () => { try { const n = await rpc<number>("gerar_ordens_pedido", { p_pedido: id }); toast(n ? `${n} ordem(ns) criada(s)` : "Todos os itens já têm ordem"); mudou(); } catch (e) { erro(e); } }}><Factory className="h-4 w-4" /> Gerar ordens dos itens</Button>)}
@@ -283,7 +283,7 @@ function Detalhe({ id, clis, onClose, onMudou }: { id: string; clis: { id: strin
           </Grid>
           <datalist id="transp">{["Retirada no local", "Entrega própria", "Correios", "Jadlog", "Loggi", "Motoboy"].map((t) => <option key={t} value={t} />)}</datalist>
           {p.entregue_em && <p className="text-sm text-slate-500">Entregue em {dataHora(p.entregue_em)}.</p>}
-          <p className="text-xs text-slate-500">Para separação, conferência, medidas, frete e etiqueta, use <Link href="/expedicao/" className="text-brand-600 underline">Expedição e Entregas</Link>. Depois que o pedido entra lá, a entrega é atualizada por lá.</p>
+          <p className="text-xs text-slate-500">Para separação, conferência, medidas, frete e etiqueta, use <Link href="/expedicao/" className="text-brand-700 underline">Expedição e Entregas</Link>. Depois que o pedido entra lá, a entrega é atualizada por lá.</p>
           <Button type="submit">Salvar entrega</Button>
         </fieldset>
       </form>}

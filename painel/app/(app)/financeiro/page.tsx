@@ -126,7 +126,7 @@ function Conteudo() {
             <Card><CardTitle right={<Button size="sm" variant="secondary" onClick={() => csv("a-receber", [["Pedido", "Cliente", "Valor", "Recebido", "Saldo", "Entrega"], ...dados.receber.map((p) => [p.numero, p.clientes?.nome || "", p.valor_total, p.valor_pago, p.valor_total - p.valor_pago, p.data_entrega])])}><Download className="h-4 w-4" /> CSV</Button>}>Pedidos com saldo em aberto</CardTitle>
               {!dados.receber.length ? <Empty texto="Nenhum pedido com saldo a receber" /> : <Table head={["Pedido", "Cliente", "Valor", "Recebido", "Saldo", ""]}>{dados.receber.map((p) => (
                 <tr key={p.id}><Td>#{p.numero} {p.descricao}</Td><Td>{p.clientes?.nome || "—"}</Td><Td className="tnum">{brl(p.valor_total)}</Td><Td className="tnum">{brl(p.valor_pago)}</Td>
-                  <Td className="tnum font-medium text-amber-700">{brl(p.valor_total - p.valor_pago)}</Td><Td><Link href={`/pedidos/?id=${p.id}`} className="text-sm text-brand-600 underline">Registrar pagamento</Link></Td></tr>))}</Table>}
+                  <Td className="tnum font-medium text-amber-700">{brl(p.valor_total - p.valor_pago)}</Td><Td><Link href={`/pedidos/?id=${p.id}`} className="text-sm text-brand-700 underline">Registrar pagamento</Link></Td></tr>))}</Table>}
             </Card>
             <Card><CardTitle>Outras receitas a receber</CardTitle><TabelaLanc lista={receberManual} /></Card>
           </div>}

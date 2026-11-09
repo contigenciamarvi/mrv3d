@@ -52,7 +52,7 @@ export function Biblioteca({ origem, abrir }: { origem?: string; abrir?: string 
                 {p.uso_comercial !== "permitido" && <Badge tom={tomUso(p.uso_comercial)}>{USO[p.uso_comercial]}</Badge>}</div>
               <div className="mt-auto flex flex-wrap gap-x-3 pt-1 text-xs text-slate-500">
                 {p.placas ? <span>{p.placas} placa(s)</span> : null}{p.tempo_estimado_min ? <span>{horas(p.tempo_estimado_min)}</span> : null}{p.peso_g ? <span>{num(p.peso_g, 1)} g</span> : null}
-                {p.produtos?.nome && <span className="text-brand-600">→ {p.produtos.nome}</span>}
+                {p.produtos?.nome && <span className="text-brand-700">→ {p.produtos.nome}</span>}
               </div>
             </div>
           </button>))}</div>)}
@@ -117,7 +117,7 @@ function DetalheProjeto({ id, onClose, onMudou }: { id: string; onClose: () => v
               {p.cores.length > 0 && <div className="flex gap-1">{p.cores.map((c) => <span key={c} title={c} className="h-5 w-5 rounded-full border border-slate-300" style={{ background: c }} />)}</div>}
               {p.autor && <div>Autor: {p.autor}</div>}
               <div>Licença: {p.licenca ? LICENCAS[p.licenca] : "—"}</div>
-              {p.makerworld_url && <a href={p.makerworld_url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-brand-600 underline"><ExternalLink className="h-3.5 w-3.5" /> Ver no MakerWorld</a>}
+              {p.makerworld_url && <a href={p.makerworld_url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-brand-700 underline"><ExternalLink className="h-3.5 w-3.5" /> Ver no MakerWorld</a>}
               {md.peso_inclui_purga_suporte && <p className="text-xs text-slate-500">Peso do fatiador já inclui suportes e purga.</p>}
               <div className="text-xs text-slate-500">Importado {dataHora(p.created_at)}{p.arquivo_nome ? ` · ${p.arquivo_nome}` : ""}{p.tamanho_bytes ? ` · ${num(p.tamanho_bytes / 1048576, 1)} MB` : ""}</div>
             </div>
@@ -151,10 +151,10 @@ function DetalheProjeto({ id, onClose, onMudou }: { id: string; onClose: () => v
           <div className="grid gap-4 md:grid-cols-2">
             <div><h3 className="mb-2 text-sm font-semibold">Usado em</h3>
               {!dados.vinc.length ? <p className="text-sm text-slate-500">Ainda não foi usado.</p> : <ul className="space-y-1 text-sm">{dados.vinc.map((v) => <li key={v.id}>
-                {v.produtos && <Link className="text-brand-600 hover:underline" href={`/produtos/?id=${v.produto_id}`}>Produto: {v.produtos.nome}</Link>}
-                {v.orcamentos && <Link className="text-brand-600 hover:underline" href={`/orcamentos/editar/?id=${v.orcamento_id}`}>Orçamento #{v.orcamentos.numero} · {v.orcamentos.titulo}</Link>}
-                {v.pedidos && <Link className="text-brand-600 hover:underline" href={`/pedidos/?id=${v.pedido_id}`}>Pedido #{v.pedidos.numero}</Link>}
-                {v.ordens_producao && <Link className="text-brand-600 hover:underline" href={`/producao/?id=${v.ordem_id}`}>OP-{v.ordens_producao.numero} ({v.ordens_producao.status})</Link>}
+                {v.produtos && <Link className="text-brand-700 hover:underline" href={`/produtos/?id=${v.produto_id}`}>Produto: {v.produtos.nome}</Link>}
+                {v.orcamentos && <Link className="text-brand-700 hover:underline" href={`/orcamentos/editar/?id=${v.orcamento_id}`}>Orçamento #{v.orcamentos.numero} · {v.orcamentos.titulo}</Link>}
+                {v.pedidos && <Link className="text-brand-700 hover:underline" href={`/pedidos/?id=${v.pedido_id}`}>Pedido #{v.pedidos.numero}</Link>}
+                {v.ordens_producao && <Link className="text-brand-700 hover:underline" href={`/producao/?id=${v.ordem_id}`}>OP-{v.ordens_producao.numero} ({v.ordens_producao.status})</Link>}
                 <span className="ml-1 text-xs text-slate-400">{dataHora(v.created_at)}</span></li>)}</ul>}</div>
             <div><h3 className="mb-2 text-sm font-semibold">Versões</h3>
               <ul className="space-y-1 text-sm">{dados.versoes.map((v) => <li key={v.id} className={cn(v.id === p.id && "font-medium")}>v{v.versao} · {v.arquivo_nome || v.nome} <span className="text-xs text-slate-400">{dataHora(v.created_at)}</span></li>)}</ul></div>
@@ -366,7 +366,7 @@ export function MakerWorld() {
             </Grid>
             <Field label="Licença do modelo (como está na página)"><Select value={f.licenca} onChange={(e) => setF({ ...f, licenca: e.target.value })}>{Object.entries(LICENCAS).filter(([k]) => k !== "propria").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
             <Field label="Observações"><Textarea value={f.descricao} onChange={(e) => setF({ ...f, descricao: e.target.value })} /></Field>
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-brand-600">{lendo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} {arq ? `Arquivo: ${arq.arquivo.name}` : "Anexar o arquivo baixado (opcional)"}
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-brand-700">{lendo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} {arq ? `Arquivo: ${arq.arquivo.name}` : "Anexar o arquivo baixado (opcional)"}
               <input type="file" accept=".3mf,.gcode,.stl,.obj,.step,.stp,.zip" className="hidden" onChange={async (e) => { const a = e.target.files?.[0]; e.target.value = ""; if (!a) return; setLendo(true); try { const x = await zipMw.abrir(a); if (x) setArq(await importarArquivo(x)); } catch (x) { erro(x); } finally { setLendo(false); } }} /></label>
             <Button type="submit" loading={salvando} disabled={!urlOk}>Salvar referência</Button>
           </fieldset>

@@ -48,7 +48,7 @@ export default function Assinatura() {
     e.preventDefault(); if (!pedido) return;
     try {
       await rpc("solicitar_alteracao_assinatura", { p_empresa: app.empresa.id, p_tipo: pedido.tipo, p_plano: pedido.plano || null, p_periodicidade: pedido.tipo === "periodicidade" ? pedido.periodicidade : null, p_motivo: pedido.motivo || null });
-      toast("Solicitação enviada. A equipe MRV3D vai confirmar com você."); setPedido(null); recarregar();
+      toast("Solicitação enviada. A equipe MRV 3D vai confirmar com você."); setPedido(null); recarregar();
     } catch (e2) { erro(e2); }
   };
 
@@ -83,7 +83,7 @@ export default function Assinatura() {
       {m.pode_gerenciar && (
         <Card className="mt-6">
           <CardTitle>Planos disponíveis</CardTitle>
-          {pendente && <div className="mb-4"><Aviso tom="amarelo">Solicitação de {TIPOS[pendente.tipo].toLowerCase()} {pendente.plano ? `para ${pendente.plano} ` : ""}aguardando a equipe MRV3D.{" "}
+          {pendente && <div className="mb-4"><Aviso tom="amarelo">Solicitação de {TIPOS[pendente.tipo].toLowerCase()} {pendente.plano ? `para ${pendente.plano} ` : ""}aguardando a equipe MRV 3D.{" "}
             <button className="underline" onClick={async () => { try { await rpc("cancelar_solicitacao_assinatura", { p_id: pendente.id }); toast("Solicitação cancelada"); recarregar(); } catch (e) { erro(e); } }}>Cancelar solicitação</button></Aviso></div>}
           <div className="grid gap-4 md:grid-cols-3">
             {planos.map((pl) => {
@@ -103,10 +103,10 @@ export default function Assinatura() {
             })}
           </div>
           <div className="mt-4 flex flex-wrap gap-4 text-sm">
-            <button disabled={!!pendente} className="text-brand-600 underline disabled:opacity-50" onClick={() => setPedido({ tipo: "periodicidade", plano: "", periodicidade: a?.periodicidade === "anual" ? "mensal" : "anual", motivo: "" })}>Mudar para cobrança {a?.periodicidade === "anual" ? "mensal" : "anual"}</button>
+            <button disabled={!!pendente} className="text-brand-700 underline disabled:opacity-50" onClick={() => setPedido({ tipo: "periodicidade", plano: "", periodicidade: a?.periodicidade === "anual" ? "mensal" : "anual", motivo: "" })}>Mudar para cobrança {a?.periodicidade === "anual" ? "mensal" : "anual"}</button>
             <button disabled={!!pendente} className="text-red-600 underline disabled:opacity-50" onClick={() => setPedido({ tipo: "cancelamento", plano: "", periodicidade: "", motivo: "" })}>Cancelar assinatura</button>
           </div>
-          <p className="mt-3 text-xs text-slate-500">Mudanças de plano são confirmadas pela equipe MRV3D (o pagamento online ainda não está integrado). Nada muda na sua conta sem essa confirmação.</p>
+          <p className="mt-3 text-xs text-slate-500">Mudanças de plano são confirmadas pela equipe MRV 3D (o pagamento online ainda não está integrado). Nada muda na sua conta sem essa confirmação.</p>
         </Card>
       )}
 
@@ -114,7 +114,7 @@ export default function Assinatura() {
         <Card><CardTitle>Faturas</CardTitle>
           {!faturas.length ? <Empty texto="Nenhuma fatura ainda" /> : <Table head={["Vencimento", "Descrição", "Valor", "Situação", ""]}>{faturas.map((f) => (
             <tr key={f.id}><Td>{data(f.vencimento)}</Td><Td>{f.descricao || "Assinatura"}</Td><Td className="tnum">{brl(f.valor)}</Td><Td><Badge tom={tomStatus(f.status)}>{f.status}</Badge></Td>
-              <Td>{f.link_pagamento && f.status !== "paga" && <a href={f.link_pagamento} target="_blank" rel="noreferrer" className="text-sm text-brand-600 underline">Pagar</a>}</Td></tr>))}</Table>}
+              <Td>{f.link_pagamento && f.status !== "paga" && <a href={f.link_pagamento} target="_blank" rel="noreferrer" className="text-sm text-brand-700 underline">Pagar</a>}</Td></tr>))}</Table>}
         </Card>
         {m.pode_gerenciar && <Card><CardTitle>Solicitações</CardTitle>
           {!m.solicitacoes.length ? <Empty texto="Nenhuma solicitação" /> : <Table head={["Quando", "Pedido", "Situação", "Resposta"]}>{m.solicitacoes.map((s) => (

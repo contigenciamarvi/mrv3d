@@ -304,7 +304,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           )}
           {manutencao && (
-            <div role="status" className="border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200 print:hidden">{manutencao}</div>
+            <div role="status" className="border-b border-brand-200 bg-brand-50 px-4 py-2 text-sm text-brand-900 dark:border-brand-700/40 dark:bg-brand-100 dark:text-brand-800 print:hidden">{manutencao}</div>
           )}
           <main className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6 print:max-w-none print:p-0">
             {atual && (

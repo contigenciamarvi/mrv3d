@@ -18,6 +18,20 @@
   --color-brand-700: #8a6516;
   --color-brand-800: #6b4e10;
   --color-brand-900: #4a360b;
+
+  /* tons neutros da identidade (preto, grafite, branco) no lugar do cinza-azulado:
+     valem para o modo claro e para o escuro, que passa a ser preto/grafite com dourado */
+  --color-slate-50: #fafafa;
+  --color-slate-100: #f4f4f5;
+  --color-slate-200: #e4e4e7;
+  --color-slate-300: #d4d4d8;
+  --color-slate-400: #a1a1aa;
+  --color-slate-500: #71717a;
+  --color-slate-600: #52525b;
+  --color-slate-700: #3f3f46;
+  --color-slate-800: #2a2a2e;
+  --color-slate-900: #18181b;
+  --color-slate-950: #0b0b0b;
 }
 /* no modo escuro, texto e destaques dourados mais claros para ler bem sobre o fundo escuro */
 .dark {

@@ -93,7 +93,7 @@ function Historico() {
   const app = useApp();
   const [tipo, setTipo] = useState("");
   const { dados, carregando, erro: falha, recarregar } = useDados(() => q<{ id: number; tipo: string; mensagem: string; created_at: string }[]>(
-    sb().from("integracao_eventos").select("id,tipo,mensagem,created_at").eq("empresa_id", app.empresa.id).order("id", { ascending: false }).limit(500)), [app.empresa.id]);
+    sb().from("integracao_eventos").select("id,tipo,mensagem,created_at").eq("empresa_id", app.empresa.id).eq("provedor", "bambu_lab").order("id", { ascending: false }).limit(500)), [app.empresa.id]);
   const lista = (dados || []).filter((e) => !tipo || e.tipo === tipo);
   return (
     <Card><CardTitle right={<Select value={tipo} onChange={(e) => setTipo(e.target.value)} className="w-48" aria-label="Tipo"><option value="">Todos</option>{Object.entries(TIPO_EV).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>}>Histórico de importações, atualizações e erros</CardTitle>

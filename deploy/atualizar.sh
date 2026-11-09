@@ -81,6 +81,8 @@ passo "5/5 Publicando"
 publicar painel /var/www/app
 publicar admin /var/www/admin
 nginx -t -q && systemctl reload nginx
+# serviço de integrações (Mercado Livre): reinicia com o código novo, se já estiver configurado
+bash "$DIR/deploy/integra/iniciar.sh" || echo "AVISO: integrações não reiniciaram (o site está no ar)"
 
 echo
 echo "ATUALIZAÇÃO CONCLUÍDA"

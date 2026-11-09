@@ -6,7 +6,8 @@ import { PageHeader } from "@/components/shell";
 import { Button, Card, CardTitle, ErrorBox, Kpi, Loading } from "@/components/ui";
 
 type Situacao = { agentes_ativos: number; agentes_online: number; empresas_com_agente: number; impressoras_por_conexao: Record<string, number>; versoes_agente: Record<string, number>;
-  erros_integracao_7d: number; faturas_com_gateway: number; gateways: string[]; armazenamento_mb: number; versao_banco: string | null };
+  erros_integracao_7d: number; faturas_com_gateway: number; gateways: string[]; armazenamento_mb: number; versao_banco: string | null;
+  ml_configurado: boolean; ml_contas: number; ml_contas_erro: number; ml_vendas_30d: number };
 
 const CONEXAO: Record<string, string> = { bambu_lan: "Bambu Lab (rede local)", moonraker: "Klipper / Moonraker", octoprint: "OctoPrint" };
 
@@ -48,6 +49,10 @@ export default function Integracoes() {
             <Linha estado="ok" nome="Importação Bambu Studio (.gcode.3mf, .3mf, .gcode, .stl, .zip)" texto="Funcionando: o arquivo é lido no navegador da loja, sem serviço externo." />
             <Linha estado="ok" nome="Consulta de CEP" texto="Funcionando: ViaCEP, com BrasilAPI de reserva. Consulta feita pelo navegador, sem chave." />
             <Linha estado="nao" nome="Bambu Lab Cloud" texto="Indisponível: a Bambu não oferece API pública nem autorização para terceiros. Só via parceria oficial." />
+            <Linha estado={d.ml_configurado ? (d.ml_contas_erro ? "parcial" : "ok") : "nao"} nome="Mercado Livre (pedidos, estoque e rastreio)"
+              texto={d.ml_configurado ? `Ativo: ${d.ml_contas} conta(s) conectada(s)${d.ml_contas_erro ? `, ${d.ml_contas_erro} com erro` : ""}, ${d.ml_vendas_30d} venda(s) importada(s) em 30 dias.`
+                : "Não configurado: crie o aplicativo no Mercado Livre e rode na VPS: bash /opt/mrv3d/deploy/integra/configurar-ml.sh"} />
+            <Linha estado="nao" nome="Shopee e TikTok Shop" texto="Ainda não integrados: exigem aplicativo aprovado pela Shopee (Open Platform) e pelo TikTok Shop (Partner Center)." />
             <Linha estado="nao" nome="MakerWorld" texto="Sem API pública. As lojas guardam o link e a licença do modelo; o download é feito por elas." />
             <Linha estado={d.faturas_com_gateway ? "ok" : "nao"} nome="Gateway de pagamento das assinaturas"
               texto={d.faturas_com_gateway ? `Em uso: ${d.gateways.join(", ")} (${d.faturas_com_gateway} fatura(s)).` : "Não configurado: as faturas são registradas e baixadas à mão em Cobranças."} />

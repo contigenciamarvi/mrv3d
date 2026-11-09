@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { Printer, Cloud, Truck, Mail, CreditCard, MessageCircle } from "lucide-react";
+import { Printer, Cloud, Truck, Mail, CreditCard, MessageCircle, Store } from "lucide-react";
 import { useApp, PageHeader } from "@/components/shell";
 import { sb, q } from "@/lib/supabase";
 import { useDados } from "@/lib/hooks";
@@ -12,11 +12,12 @@ type Integ = { provedor: string; status: string; modo: string; ultima_sincroniza
 export default function Integracoes() {
   const app = useApp();
   const { dados } = useDados(async () => {
-    const [ints, ags] = await Promise.all([
+    const [ints, ags, ml] = await Promise.all([
       q<Integ[]>(sb().from("integracoes").select("provedor,status,modo,ultima_sincronizacao").eq("empresa_id", app.empresa.id)),
       app.pode("integracoes_config") || app.pode("impressoras_ver") ? q<{ id: string; ultimo_contato: string | null }[]>(sb().from("agentes_locais").select("id,ultimo_contato").eq("empresa_id", app.empresa.id).eq("ativo", true)) : Promise.resolve([]),
+      q<{ status: string; apelido: string | null }[]>(sb().from("marketplace_contas").select("status,apelido").eq("empresa_id", app.empresa.id).neq("status", "desconectada")).catch(() => []),
     ]);
-    return { ints, ags };
+    return { ints, ags, ml };
   }, [app.empresa.id]);
   const bambu = dados?.ints.find((i) => i.provedor === "bambu_lab");
   const online = (dados?.ags || []).filter((a) => a.ultimo_contato && Date.now() - new Date(a.ultimo_contato).getTime() < 300000).length;
@@ -25,6 +26,9 @@ export default function Integracoes() {
       status: bambu?.status === "conectada" ? ["Conectada (rede local)", "verde"] : ["Biblioteca ativa · conexão não configurada", "amarelo"], detalhe: bambu?.ultima_sincronizacao ? `Última leitura ${dataHora(bambu.ultima_sincronizacao)}` : undefined },
     { nome: "Agente local de impressoras", desc: "Klipper/Moonraker, OctoPrint e Bambu Lab pela rede da loja, somente leitura.", icone: Cloud, href: "/integracoes/bambu/?aba=config",
       status: dados?.ags.length ? [`${online}/${dados.ags.length} agente(s) online`, online ? "verde" : "amarelo"] : ["Não configurada", "cinza"] },
+    { nome: "Mercado Livre", desc: "Vendas viram pedidos, estoque dos anúncios segue o do sistema e o rastreio vai e volta.", icone: Store, href: "/integracoes/marketplaces/",
+      status: dados?.ml.length ? (dados.ml.some((c) => c.status === "erro") ? ["Com erro", "amarelo"] : [`Conectada${dados.ml[0].apelido ? ` · ${dados.ml[0].apelido}` : ""}`, "verde"]) : ["Não conectada", "cinza"] },
+    { nome: "Shopee e TikTok Shop", desc: "Dependem da aprovação do aplicativo pela Shopee e pelo TikTok Shop.", icone: Store, status: ["Aguardando aprovação", "cinza"] },
     { nome: "Melhor Envio", desc: "Cotação de frete e etiquetas.", icone: Truck, status: ["Não configurada", "cinza"] },
     { nome: "E-mail (SMTP)", desc: "Envio de orçamentos e avisos por e-mail.", icone: Mail, status: ["Não configurada", "cinza"] },
     { nome: "Gateway de pagamento", desc: "Pix e cartão com confirmação automática.", icone: CreditCard, status: ["Não configurada", "cinza"] },
